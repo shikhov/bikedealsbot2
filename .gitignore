@@ -1,0 +1,4 @@
+ansible/inventory/
+app/src/creds.json
+*.pyc
+__pycache__
