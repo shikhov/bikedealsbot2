@@ -571,7 +571,6 @@ def disableUser(chat_id):
 
 
 async def checkSKU():
-    stores = {}
     now = int(time())
 
     db = getDb(DBSKU)
@@ -604,15 +603,12 @@ async def checkSKU():
             doc['price'] = sku['price']
             doc['errors'] = 0
             doc['lastgoodts'] = int(time())
-            stores[doc['store']] = True
         else:
             doc['errors'] += 1
-            if doc['store'] not in stores: stores[doc['store']] = False
 
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
         doc.save()
-
 
 
 if __name__ == '__main__':
