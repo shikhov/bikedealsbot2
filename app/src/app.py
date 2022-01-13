@@ -531,8 +531,8 @@ async def notify():
         if not doc['price_prev'] is None and doc['instock']:
             if doc['price'] < doc['price_prev']:
                 addMsg('📉 Снижение цены!\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
-                if doc['price'] != 0:
-                    percents = int((1 - doc['price_prev']/float(doc['price']))*100)
+                if doc['price_prev'] != 0:
+                    percents = int((1 - doc['price']/float(doc['price_prev']))*100)
                     if percents >= BESTDEALSMINPERCENTAGE:
                         bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
                         if bdkey not in bestdeals:
