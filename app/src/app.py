@@ -611,11 +611,33 @@ async def checkSKU():
         doc.save()
 
 
+async def errorsMonitor():
+    bad = {}
+    good = {}
+    db = getDb(DBSKU)
+    selector = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
+    docs = Query(db, selector=selector)()['docs']
+    for doc in docs:
+        store = doc['store']
+        errors = doc['errors']
+        if not store in good: good[store] = 0
+        if not store in bad: bad[store] = 0
+        if errors == 0:
+            good[store] += 1
+        else:
+            bad[store] += 1
+
+    for store in good:
+        if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
+            await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
+
+
 if __name__ == '__main__':
     scheduler = AsyncIOScheduler()
     scheduler.start()
 
     scheduler.add_job(checkSKU, 'interval', seconds=300)
     scheduler.add_job(notify, 'interval', seconds=300)
+    scheduler.add_job(errorsMonitor, 'interval', seconds=CHECKINTERVAL*60)
 
     executor.start_polling(dp, skip_updates=True)
