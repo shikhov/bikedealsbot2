@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
+from bs4 import BeautifulSoup
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
@@ -17,6 +18,11 @@ from cloudant.client import Cloudant
 from cloudant.query import Query
 from logdna import LogDNAHandler
 from pytz import timezone
+# from selenium import webdriver
+# from selenium.webdriver.chrome.options import Options
+# from fake_useragent import UserAgent
+
+from pyppeteer import launch
 
 from config import DBSETTINGS, DBSKU, DBSKUCACHE, DBUSERS
 
@@ -77,6 +83,15 @@ options = {
 logger = logging.getLogger('logdna')
 logger.setLevel(logging.INFO)
 logger.addHandler(LogDNAHandler(LOGDNAKEY, options))
+
+# chrome_options = webdriver.ChromeOptions()
+# chrome_options.add_argument("--headless")
+# chrome_options.add_argument(f'user-agent={UserAgent().random}')
+# chrome_options.add_argument("--window-size=1920x1080")
+
+# driver = webdriver.Remote(
+#     command_executor='http://jolly_elion:4444/wd/hub',
+#     options=chrome_options)
 
 
 def logMessage(message):
@@ -143,8 +158,8 @@ async def processCRC(message: types.Message):
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.com/p2(\d+)\.html)', chat_type='private')
 async def processB24(message: types.Message):
-    await message.answer('К сожалению, Bike24 в настоящее время не поддерживается')
-    return
+    # await message.answer('К сожалению, Bike24 в настоящее время не поддерживается')
+    # return
 
     chat_id = str(message.from_user.id)
 
@@ -262,7 +277,7 @@ async def showVariants(store, url, chat_id, message_id):
     msg = await bot.send_message(chat_id, '🔎 Ищу информацию о товаре...', reply_to_message_id=message_id)
 
     text_array = []
-    variants = getVariants(store, url)
+    variants = await getVariants(store, url)
     if variants:
         first_skuid = list(variants)[0]
         if len(variants) == 1:
@@ -300,7 +315,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
-    variants = getVariants(store, url)
+    variants = await getVariants(store, url)
     if not variants or skuid not in variants:
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
@@ -360,7 +375,7 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
     if msg: await sendOrEditMsg()
 
 
-def getVariants(store, url):
+async def getVariants(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
     db = getDb(DBSKUCACHE)
     selector = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
@@ -368,18 +383,121 @@ def getVariants(store, url):
     if len(docs) > 0:
         return docs[0]['variants']
 
-    return globals()['parse' + store](url)
+    # if store == 'B24':
+    #     return await parseB24(url)
+
+    return await globals()['parse' + store](url)
 
 
-def parseB24(url):
-    return None
+async def parseB24(url):
+
+
+    # try:
+    #     chrome_options = webdriver.ChromeOptions()
+    #     chrome_options.add_argument("--headless")
+    #     chrome_options.add_argument(f'user-agent={UserAgent().random}')
+    #     chrome_options.add_argument("--window-size=1920x1080")
+
+    #     driver = webdriver.Remote(
+    #         command_executor='http://jolly_elion:4444/wd/hub',
+    #         options=chrome_options)
+    #     driver.get(url)
+    # except Exception:
+    #     return None
+    # finally:    
+    #     driver.quit()
+
+    start_parm = {
+            # "executablePath": '/usr/bin/chromium',
+            "headless": True,
+            "args": [
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.103 Safari/537.36',
+                '--no-sandbox',
+            ],
+    }
+
+    browser = await launch(**start_parm)
+    page = await browser.newPage()
+    await page.goto(url)
+
+    for i in range(6):
+        content = await page.content()
+        matches = re.search(r'dataLayer =\s+\[(.+?)\];', content, re.DOTALL)
+        if matches: break
+        asyncio.sleep(1)
+        logging.info(str(i) + ' second...')
+
+    if not matches: return None
+
+    # jsdata = json.loads(matches.group(1).decode('unicode-escape'))
+    jsdata = json.loads(matches.group(1).replace(r'\"', '"'))
+    if 'productOptionsAvailability' not in jsdata: return None
+
+    instock = jsdata['isAvailable']
+    availdict = {}
+    for entry in jsdata['productOptionsAvailability']:
+        arr = entry.replace('\/', '/').split('|')
+        varname = arr[0].replace(':', '|')
+        varcount = arr[1]
+        availdict[varname] = varcount
+
+    def findDataProps(tag):
+        return tag.name == 'div' and tag.get('id') == 'add-to-cart'
+
+    soup = BeautifulSoup(content, 'lxml')
+    res = soup.find_all(findDataProps)
+    if not res: return None
+    if not res[0].get('data-props'): return None
+
+    jsdata = json.loads(res[0]['data-props'])
+    price = int(float(jsdata['gtmData']['price']))
+    prodid = str(jsdata['gtmData']['id'])
+    name = jsdata['gtmData']['name'].replace('\/', '/')
+    variant = jsdata['gtmData']['variant'].replace('\/', '/')
+    currency = jsdata['productDetailPrice']['currencyCode']
+
+    namesplit = name.split(' - ')
+    if len(namesplit) > 1:
+        name = namesplit[0]
+        variant = ', '.join(namesplit[1:]) + (', ' + variant if variant else '')
+
+    variants = {}
+
+    if jsdata['productOptionList']:
+        for sku in jsdata['productOptionList'][0]['optionValueList']:
+            skuid = str(sku['id'])
+            variants[skuid] = {}
+            vartext = sku['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+            variants[skuid]['instock'] = False
+            if vartext in availdict:
+                variants[skuid]['instock'] = (availdict[vartext] != '0')
+            variants[skuid]['variant'] = ((variant + ', ' if variant else '') + vartext).replace('\/', '/').strip()
+            variants[skuid]['prodid'] = prodid
+            variants[skuid]['price'] = price + int(sku['surcharge'])
+            variants[skuid]['currency'] = currency
+            variants[skuid]['store'] = 'B24'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = name
+    else:
+        variants['0'] = {}
+        variants['0']['variant'] = variant
+        variants['0']['prodid'] = prodid
+        variants['0']['price'] = price
+        variants['0']['currency'] = currency
+        variants['0']['store'] = 'B24'
+        variants['0']['url'] = url
+        variants['0']['name'] = name
+        variants['0']['instock'] = instock
+
+    cacheVariants(variants)
+    return variants
 
 
 def parseBD(url):
     return None
 
 
-def parseBC(url):
+async def parseBC(url):
     try:
         content = urlopen(url).read().decode('utf-8')
     except Exception:
@@ -409,7 +527,7 @@ def parseBC(url):
     return variants
 
 
-def parseCRC(url):
+async def parseCRC(url):
     headerslist = {
         'RUB': {'User-Agent': 'Mozilla/5.0', 'Cookie': 'countryCode=RU; languageCode=en; currencyCode=RUB'},
         'GBP': {'User-Agent': 'Mozilla/5.0', 'Cookie': 'countryCode=GB; languageCode=en; currencyCode=GBP'}}
@@ -587,7 +705,7 @@ async def checkSKU():
 
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']...')
 
-        variants = getVariants(doc['store'], doc['url'])
+        variants = await getVariants(doc['store'], doc['url'])
         if variants and doc['skuid'] in variants:
             sku = variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
