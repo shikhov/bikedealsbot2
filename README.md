@@ -6,4 +6,3 @@
 * фреймворк: aiogram
 * база данных: Cloudant
 * запуск фоновых заданий: Advanced Python Scheduler
-* хранение логов: LogDNA
