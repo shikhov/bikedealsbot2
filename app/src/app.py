@@ -15,7 +15,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from cloudant.adapters import Replay429Adapter
 from cloudant.client import Cloudant
 from cloudant.query import Query
-from logdna import LogDNAHandler
 from pytz import timezone
 
 from config import DBSETTINGS, DBSKU, DBSKUCACHE, DBUSERS
@@ -69,25 +68,17 @@ bot = Bot(token=TOKEN, parse_mode='HTML')
 dp = Dispatcher(bot)
 dp.middleware.setup(LoggingMiddleware())
 
-# LogDNA
-options = {
-    'app': APPNAME,
-    'index_meta': True
-}
-logger = logging.getLogger('logdna')
-logger.setLevel(logging.INFO)
-logger.addHandler(LogDNAHandler(LOGDNAKEY, options))
-
 
 def logMessage(message):
-    meta = {
-        'chat_id': message.from_user.id
-    }
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
-    username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-    dispname = first_name + ' ' + last_name if last_name else first_name
-    logger.info(dispname + username + ': ' + message.text, {'meta': meta})
+    pass
+    # meta = {
+    #     'chat_id': message.from_user.id
+    # }
+    # first_name = message.from_user.first_name
+    # last_name = message.from_user.last_name
+    # username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
+    # dispname = first_name + ' ' + last_name if last_name else first_name
+    # logger.info(dispname + username + ': ' + message.text, {'meta': meta})
 
 
 @dp.message_handler(commands='start', chat_type='private')
@@ -628,6 +619,7 @@ async def errorsMonitor():
             bad[store] += 1
 
     for store in good:
+        if store == 'BD' or store == 'B24': continue
         if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
             await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
 
