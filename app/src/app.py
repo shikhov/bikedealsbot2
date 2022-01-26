@@ -31,7 +31,7 @@ def getDb(dbname):
 def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
-    global MAXITEMSPERUSER, CHECKINTERVAL, APPNAME, LOGDNAKEY
+    global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID
 
     db = getDb(DBSETTINGS)
     settings = db['settings']
@@ -46,15 +46,14 @@ def loadSettings():
     ERRORMAXDAYS = settings['ERRORMAXDAYS']
     MAXITEMSPERUSER = settings['MAXITEMSPERUSER']
     CHECKINTERVAL = settings['CHECKINTERVAL']
-    APPNAME = settings['APPNAME']
-    LOGDNAKEY = settings['LOGDNAKEY']
+    LOGCHATID = settings['LOGCHATID']
 
 class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
         super(LoggingMiddleware, self).__init__()
 
     async def on_post_process_message(self, message: types.Message, results, data: dict):
-        logMessage(message)
+        await logMessage(message)
 
 
 # Configure logging
@@ -69,16 +68,15 @@ dp = Dispatcher(bot)
 dp.middleware.setup(LoggingMiddleware())
 
 
-def logMessage(message):
-    pass
-    # meta = {
-    #     'chat_id': message.from_user.id
-    # }
-    # first_name = message.from_user.first_name
-    # last_name = message.from_user.last_name
-    # username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-    # dispname = first_name + ' ' + last_name if last_name else first_name
-    # logger.info(dispname + username + ': ' + message.text, {'meta': meta})
+async def logMessage(message):
+    if message.from_user.id == ADMINCHATID: return
+
+    first_name = message.from_user.first_name
+    last_name = message.from_user.last_name
+    username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
+    dispname = first_name + ' ' + last_name if last_name else first_name
+    logentry = '<b>' + dispname + username + ':</b> ' + message.text
+    await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
 
 
 @dp.message_handler(commands='start', chat_type='private')
