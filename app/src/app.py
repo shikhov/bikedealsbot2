@@ -209,7 +209,7 @@ async def processCmdStat(message: types.Message):
     users = len(Query(db, selector={'enable': True})()['docs'])
 
     db = getDb(DBSKU)
-    docs = Query(db, selector={'_id': {'$gt': '0'}})()['docs']
+    docs = Query(db, selector={'chatid': {'$exists': True}})()['docs']
     sku = len(docs)
     skubyusers = {}
     for doc in docs: skubyusers[doc['chatid']] = 'foo'
