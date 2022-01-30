@@ -99,7 +99,8 @@ async def processCmdStart(message: types.Message):
     selector = {'chatid': chat_id}
     docs = Query(db, selector=selector)()['docs']
     for entry in docs:
-        doc = get_or_create(db, entry['_id'])
+        if entry['_id'] not in db: continue
+        doc = db[entry['_id']]
         doc['enable'] = True
         doc.save()
 
@@ -508,7 +509,8 @@ async def notify():
     docs = Query(db, selector=selector)()['docs']
     for entry in docs:
         await asyncio.sleep(0.1)
-        doc = get_or_create(db, entry['_id'])
+        if entry['_id'] not in db: continue
+        doc = db[entry['_id']]
         skustring = getSkuString(doc, ['store', 'url', 'price'])
 
         if not doc['instock_prev'] is None:
@@ -554,7 +556,8 @@ def disableUser(chat_id):
     selector = {'chatid': chat_id}
     docs = Query(db, selector=selector)()['docs']
     for entry in docs:
-        doc = get_or_create(db, entry['_id'])
+        if entry['_id'] not in db: continue
+        doc = db[entry['_id']]
         doc['enable'] = False
         doc.save()
 
@@ -567,7 +570,8 @@ async def checkSKU():
     docs = Query(db, selector=selector)()['docs']
     for entry in docs:
         await asyncio.sleep(0.1)
-        doc = get_or_create(db, entry['_id'])
+        if entry['_id'] not in db: continue
+        doc = db[entry['_id']]
 
         # increase check interval for inactive SKU
         days_inactive = (now - doc['lastgoodts'])/86400
