@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import zlib
+from hashlib import md5
 from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
@@ -104,6 +105,36 @@ async def processCmdStart(message: types.Message):
         doc = db[entry['_id']]
         doc['enable'] = True
         doc.save()
+
+
+@dp.message_handler(commands='bc', chat_id=ADMINCHATID)
+async def processCmdBroadcast(message: types.Message):
+    await message.answer('🟢 Начало рассылки')
+    msg = message.get_args()
+    msg_hash = md5(msg.encode('utf-8')).hexdigest()
+    count = 0
+
+    db = getDb(DBUSERS)
+    docs = Query(db, selector={'enable': True})()['docs']
+    for entry in docs:
+        count += 1
+        if count % 100 == 0:
+            await message.answer('Обработано: ' + str(count))
+
+        await asyncio.sleep(0.1)
+        doc = db[entry['_id']]
+        if 'broadcasts' not in doc: doc['broadcasts'] = []
+        if msg_hash in doc['broadcasts']: continue
+
+        try:
+            await bot.send_message(chat_id=doc['_id'], text=msg)
+            doc['broadcasts'].append(msg_hash)
+            doc.save()
+        except (exceptions.BotBlocked, exceptions.UserDeactivated):
+            disableUser(doc['_id'])
+
+    await message.answer('🔴 Окончание рассылки')
+
 
 
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
