@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import zlib
 from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
@@ -82,7 +83,7 @@ async def logMessage(message):
 @dp.message_handler(commands='start', chat_type='private')
 async def processCmdStart(message: types.Message):
     msg = '️Присылайте мне ссылки на товары из веломагазинов, а я буду отслеживать их цены и наличие 😉 '
-    msg += 'Поддерживаются:\nchainreactioncycles.com\nbike-components.de'
+    msg += 'Поддерживаются:\nchainreactioncycles.com\nbike-components.de\nstarbike.com'
     await message.answer(msg)
 
     chat_id = str(message.from_user.id)
@@ -129,6 +130,16 @@ async def processCRC(message: types.Message):
     if rg:
         url = 'https://www.chainreactioncycles.com/en/rp-prod' + rg.group(2)
         await showVariants(store='CRC', url=url, chat_id=chat_id, message_id=message.message_id)
+
+
+@dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+/)', chat_type='private')
+async def processSB(message: types.Message):
+    chat_id = str(message.from_user.id)
+
+    rg = re.search(r'(https://www\.starbike\.com/en/\S+)', message.text)
+    if rg:
+        url = rg.group(1)
+        await showVariants(store='SB', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.com/p2(\d+)\.html)', chat_type='private')
@@ -453,6 +464,38 @@ def parseCRC(url):
         cacheVariants(variants)
         return variants
     return None
+
+
+def parseSB(url):
+    try:
+        content = urlopen(url).read().decode('iso-8859-15')
+    except Exception:
+        return None
+
+    matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', content, re.DOTALL)
+    if not matches: return None
+
+    jsdata = json.loads(matches.group(1))
+    skus = jsdata[1]['offers']
+    name = jsdata[1]['name']
+    prodid = str(zlib.crc32(url.encode('utf-8')))
+
+    variants = {}
+    for sku in skus:
+        skuid = sku['sku']
+        if skuid is None: skuid = '0'
+        variants[skuid] = {}
+        variants[skuid]['variant'] = sku['name'].replace(name, '').strip()#.replace('\/', '/')
+        variants[skuid]['prodid'] = prodid
+        variants[skuid]['price'] = int(float(sku['price']))
+        variants[skuid]['currency'] = sku['priceCurrency']
+        variants[skuid]['store'] = 'SB'
+        variants[skuid]['url'] = url
+        variants[skuid]['name'] = name
+        variants[skuid]['instock'] = (sku['availability'] == 'InStock')
+
+    cacheVariants(variants)
+    return variants
 
 
 def getSkuString(sku, options):
