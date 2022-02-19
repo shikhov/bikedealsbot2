@@ -518,6 +518,8 @@ def parseSB(url):
         variants[skuid] = {}
         variants[skuid]['variant'] = sku['name'].replace(name, '').strip()#.replace('\/', '/')
         variants[skuid]['prodid'] = prodid
+        tmp = sku['price'].split('.')
+        if len(tmp) == 3: sku['price'] = tmp[0] + tmp[1]
         variants[skuid]['price'] = int(float(sku['price']))
         variants[skuid]['currency'] = sku['priceCurrency']
         variants[skuid]['store'] = 'SB'
