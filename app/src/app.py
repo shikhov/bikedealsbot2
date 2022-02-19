@@ -466,7 +466,7 @@ def parseCRC(url):
 
         product = universal['product']
         prodid = product['id'].replace('prod', '')
-        prodname = product['manufacturer'] + ' ' + product['name']
+        prodname = (product['manufacturer'] + ' ' + product['name']).replace('\\"', '"')
 
         matches = re.search(r'var\s+variantsAray\s+=\s+(\[.+?);', content, re.DOTALL)
         if not matches: continue
@@ -518,7 +518,7 @@ def parseSB(url):
         skuid = sku['sku']
         if skuid is None: skuid = '0'
         variants[skuid] = {}
-        variants[skuid]['variant'] = sku['name'].replace(name, '').strip()#.replace('\/', '/')
+        variants[skuid]['variant'] = sku['name'].replace(name, '').strip()
         variants[skuid]['prodid'] = prodid
         tmp = sku['price'].split('.')
         if len(tmp) == 3: sku['price'] = tmp[0] + tmp[1]
@@ -558,7 +558,7 @@ def getSkuString(sku, options):
     if 'price' in options:
         pricetxt = ' <b>' + price + ' ' + currency + '</b>'
 
-    return storename + urlname + icon + variant + pricetxt
+    return storename + urlname + icon + (variant + pricetxt).strip()
 
 
 def cacheVariants(variants):
