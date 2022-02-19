@@ -262,6 +262,7 @@ async def processCmdStat(message: types.Message):
     bc = len(Query(db, selector={'store': 'BC'})()['docs'])
     b24 = len(Query(db, selector={'store': 'B24'})()['docs'])
     bd = len(Query(db, selector={'store': 'BD'})()['docs'])
+    sb = len(Query(db, selector={'store': 'SB'})()['docs'])
 
     msg = ''
     msg += '<b>Total users:</b> ' + str(usersall) + '\n'
@@ -273,6 +274,7 @@ async def processCmdStat(message: types.Message):
     msg += '<b>BC:</b> ' + str(bc) + '\n'
     msg += '<b>B24:</b> ' + str(b24) + '\n'
     msg += '<b>BD:</b> ' + str(bd) + '\n'
+    msg += '<b>SB:</b> ' + str(sb) + '\n'
 
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
