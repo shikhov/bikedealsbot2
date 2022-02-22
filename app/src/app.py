@@ -81,10 +81,27 @@ async def logMessage(message):
     await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
 
 
+def getStoreUrls(activeonly):
+    arr = []
+    for key in stores:
+        if (activeonly and stores[key]['active']) or not activeonly:
+            arr.append(stores[key]['url'])
+    return arr
+
+
+def getStoreKeys(activeonly):
+    arr = []
+    for key in stores:
+        if (activeonly and stores[key]['active']) or not activeonly:
+            arr.append(key)
+    return arr
+
+
 @dp.message_handler(commands='start', chat_type='private')
 async def processCmdStart(message: types.Message):
     msg = '️Присылайте мне ссылки на товары из веломагазинов, а я буду отслеживать их цены и наличие 😉 '
-    msg += 'Поддерживаются:\nchainreactioncycles.com\nbike-components.de\nstarbike.com'
+    msg += 'Поддерживаются:\n'
+    msg += '\n'.join(getStoreUrls(activeonly=True))
     await message.answer(msg)
 
     chat_id = str(message.from_user.id)
@@ -223,6 +240,17 @@ async def processCmdDel(message: types.Message):
     await message.answer('Какая-то ошибка 😧')
 
 
+@dp.message_handler(commands='help', chat_type='private')
+async def processCmdHelp(message: types.Message):
+    msg = '️Бот предназначен для отслеживания изменения цен товаров и их наличия. Для добавления отправьте боту '
+    msg += 'ссылку на товар одного из поддерживаемых магазинов и, если требуется, выберите одну или несколько '
+    msg += 'разновидностей.\nПосмотреть список отслеживаемых товаров и удалить ненужные '
+    msg += 'можно командой /list.'
+    msg += '\n\nПоддерживаемые магазины:\n'
+    msg += '\n'.join(getStoreUrls(activeonly=True))
+    await message.answer(msg)
+
+
 @dp.message_handler(commands='list', chat_type='private')
 async def processCmdList(message: types.Message):
     chat_id = str(message.from_user.id)
@@ -249,32 +277,26 @@ async def processCmdStat(message: types.Message):
 
     db = getDb(DBUSERS)
     usersall = len(Query(db, selector={'_id': {'$gt': '0'}})()['docs'])
-    users = len(Query(db, selector={'enable': True})()['docs'])
+    usersactive = len(Query(db, selector={'enable': True})()['docs'])
 
     db = getDb(DBSKU)
     docs = Query(db, selector={'chatid': {'$exists': True}})()['docs']
-    sku = len(docs)
+    skuall = len(docs)
     skubyusers = {}
     for doc in docs: skubyusers[doc['chatid']] = 'foo'
     userswsku = len(skubyusers.keys())
     skuactive = len(Query(db, selector={'enable': True})()['docs'])
-    crc = len(Query(db, selector={'store': 'CRC'})()['docs'])
-    bc = len(Query(db, selector={'store': 'BC'})()['docs'])
-    b24 = len(Query(db, selector={'store': 'B24'})()['docs'])
-    bd = len(Query(db, selector={'store': 'BD'})()['docs'])
-    sb = len(Query(db, selector={'store': 'SB'})()['docs'])
 
     msg = ''
     msg += '<b>Total users:</b> ' + str(usersall) + '\n'
-    msg += '<b>Enabled users:</b> ' + str(users) + '\n'
+    msg += '<b>Enabled users:</b> ' + str(usersactive) + '\n'
     msg += '<b>Users with SKU:</b> ' + str(userswsku) + '\n'
-    msg += '<b>Total SKU:</b> ' + str(sku) + '\n'
+    msg += '<b>Total SKU:</b> ' + str(skuall) + '\n'
     msg += '<b>Active SKU:</b> ' + str(skuactive) + '\n'
-    msg += '<b>CRC:</b> ' + str(crc) + '\n'
-    msg += '<b>BC:</b> ' + str(bc) + '\n'
-    msg += '<b>B24:</b> ' + str(b24) + '\n'
-    msg += '<b>BD:</b> ' + str(bd) + '\n'
-    msg += '<b>SB:</b> ' + str(sb) + '\n'
+
+    for key in getStoreKeys(activeonly=False):
+        num = len(Query(db, selector={'store': key})()['docs'])
+        msg += '<b>' + key + ':</b> ' + str(num) + '\n'
 
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
@@ -402,7 +424,7 @@ def getVariants(store, url):
     if len(docs) > 0:
         return docs[0]['variants']
 
-    return globals()['parse' + store](url)
+    return stores[store]['parseFunction'](url)
 
 
 def parseB24(url):
@@ -665,7 +687,7 @@ async def checkSKU():
                 doc['instock_prev'] = doc['instock']
             else:
                 doc['instock_prev'] = None
-            if sku['price'] != doc['price']:
+            if sku['price'] != doc['price'] and sku['currency'] == doc['currency']:
                 doc['price_prev'] = doc['price']
             else:
                 doc['price_prev'] = None
@@ -702,6 +724,14 @@ async def errorsMonitor():
         if store == 'BD' or store == 'B24': continue
         if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
             await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
+
+
+stores = {}
+stores['CRC'] = {'active': True, 'parseFunction': parseCRC, 'url': 'chainreactioncycles.com'}
+stores['BC'] = {'active': True, 'parseFunction': parseBC, 'url': 'bike-components.de'}
+stores['SB'] = {'active': True, 'parseFunction': parseSB, 'url': 'starbike.com'}
+stores['B24'] = {'active': False, 'parseFunction': parseB24, 'url': 'bike24.com'}
+stores['BD'] = {'active': False, 'parseFunction': parseBD, 'url': 'bike-discount.de'}
 
 
 if __name__ == '__main__':
