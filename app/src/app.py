@@ -33,7 +33,7 @@ def getDb(dbname):
 def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
-    global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID
+    global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
 
     db = getDb(DBSETTINGS)
     settings = db['settings']
@@ -49,6 +49,8 @@ def loadSettings():
     MAXITEMSPERUSER = settings['MAXITEMSPERUSER']
     CHECKINTERVAL = settings['CHECKINTERVAL']
     LOGCHATID = settings['LOGCHATID']
+    BANNERSTART = settings['BANNERSTART']
+    BANNERHELP = settings['BANNERHELP']
 
 class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
@@ -97,10 +99,10 @@ def getStoreKeys(activeonly):
     return arr
 
 
+
 @dp.message_handler(commands='start', chat_type='private')
 async def processCmdStart(message: types.Message):
-    msg = '️Присылайте мне ссылки на товары из веломагазинов, а я буду отслеживать их цены и наличие 😉 '
-    msg += 'Поддерживаются:\n'
+    msg = BANNERSTART
     msg += '\n'.join(getStoreUrls(activeonly=True))
     await message.answer(msg)
 
@@ -242,11 +244,7 @@ async def processCmdDel(message: types.Message):
 
 @dp.message_handler(commands='help', chat_type='private')
 async def processCmdHelp(message: types.Message):
-    msg = '️Бот предназначен для отслеживания изменения цен товаров и их наличия. Для добавления отправьте боту '
-    msg += 'ссылку на товар одного из поддерживаемых магазинов и, если требуется, выберите одну или несколько '
-    msg += 'разновидностей.\nПосмотреть список отслеживаемых товаров и удалить ненужные '
-    msg += 'можно командой /list.'
-    msg += '\n\nПоддерживаемые магазины:\n'
+    msg = BANNERHELP
     msg += '\n'.join(getStoreUrls(activeonly=True))
     await message.answer(msg)
 
