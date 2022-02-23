@@ -719,7 +719,7 @@ async def errorsMonitor():
             bad[store] += 1
 
     for store in good:
-        if store == 'BD' or store == 'B24': continue
+        if not stores[store]['active']: continue
         if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
             await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
 
