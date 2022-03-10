@@ -784,7 +784,7 @@ stores['CRC'] = {'active': True, 'parseFunction': parseCRC, 'url': 'chainreactio
 stores['BC'] = {'active': True, 'parseFunction': parseBC, 'url': 'bike-components.de'}
 stores['SB'] = {'active': True, 'parseFunction': parseSB, 'url': 'starbike.com'}
 stores['B24'] = {'active': False, 'parseFunction': parseB24, 'url': 'bike24.com'}
-stores['BD'] = {'active': False, 'parseFunction': parseBD, 'url': 'bike-discount.de'}
+stores['BD'] = {'active': True, 'parseFunction': parseBD, 'url': 'bike-discount.de'}
 
 
 if __name__ == '__main__':
