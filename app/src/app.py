@@ -10,6 +10,7 @@ from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
 
+from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils import exceptions
@@ -207,16 +208,16 @@ async def processB24(message: types.Message):
 
 
 
-@dp.message_handler(regexp=r'(https://www\.bike-discount\.de/.+?/[^?&]+)', chat_type='private')
+@dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
 async def processBD(message: types.Message):
-    await message.answer('К сожалению, bike-discount в настоящее время не поддерживается')
-    return
+    # await message.answer('К сожалению, bike-discount в настоящее время не поддерживается')
+    # return
 
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https://www\.bike-discount\.de/.+?/[^?&]+)', message.text)
+    rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', message.text)
     if rg:
-        url = rg.group(1)
+        url = 'https://www.bike-discount.de/en/' + rg.group(1)
         await showVariants(store='BD', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
@@ -430,7 +431,68 @@ def parseB24(url):
 
 
 def parseBD(url):
-    return None
+    try:
+        response = urlopen(url)
+        # content = response.read().decode('iso-8859-15')
+        content = response.read().decode('utf-8')
+    except Exception:
+        return None
+
+    url = response.geturl()
+    matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
+    if not matches: return None
+
+    jsdata = json.loads(matches.group(1))
+    # print(jsdata)
+
+    prodid = str(jsdata['productID'])
+    currency = jsdata['productCurrency']
+
+    matches = re.search(r'dataLayer.push \((.+?)\);', content, re.DOTALL)
+    if not matches: return None
+
+    jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
+    # print(jsdata)
+
+    name = jsdata['brand'] + ' ' + jsdata['name']
+    price = jsdata['price']
+
+    variants = {}
+
+    def findVariants(tag):
+        return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
+
+    soup = BeautifulSoup(content, 'lxml')
+    res = soup.find_all(findVariants)
+    if res:
+        for x in res:
+            skuid = x['value']
+            variants[skuid] = {}
+            variants[skuid]['variant'] = x['title']
+            variants[skuid]['prodid'] = prodid
+            variants[skuid]['price'] = int(float(x['price'])*0.841)
+            variants[skuid]['currency'] = currency
+            variants[skuid]['store'] = 'BD'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = name
+            variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
+    else:
+        matches = re.search(r'<link itemprop="availability" href="(.+?)"', content, re.DOTALL)
+        if not matches: return None
+        instock = (matches.group(1) == 'https://schema.org/InStock')
+
+        variants['0'] = {}
+        variants['0']['variant'] = ''
+        variants['0']['prodid'] = prodid
+        variants['0']['price'] = int(float(price)*0.841)
+        variants['0']['currency'] = currency
+        variants['0']['store'] = 'BD'
+        variants['0']['url'] = url
+        variants['0']['name'] = name
+        variants['0']['instock'] = instock
+
+    cacheVariants(variants)
+    return variants
 
 
 def parseBC(url):
