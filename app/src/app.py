@@ -210,9 +210,6 @@ async def processB24(message: types.Message):
 
 @dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
 async def processBD(message: types.Message):
-    # await message.answer('К сожалению, bike-discount в настоящее время не поддерживается')
-    # return
-
     chat_id = str(message.from_user.id)
 
     rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', message.text)
@@ -433,7 +430,6 @@ def parseB24(url):
 def parseBD(url):
     try:
         response = urlopen(url)
-        # content = response.read().decode('iso-8859-15')
         content = response.read().decode('utf-8')
     except Exception:
         return None
@@ -443,8 +439,6 @@ def parseBD(url):
     if not matches: return None
 
     jsdata = json.loads(matches.group(1))
-    # print(jsdata)
-
     prodid = str(jsdata['productID'])
     currency = jsdata['productCurrency']
 
@@ -452,16 +446,13 @@ def parseBD(url):
     if not matches: return None
 
     jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
-    # print(jsdata)
-
     name = jsdata['brand'] + ' ' + jsdata['name']
     price = jsdata['price']
-
-    variants = {}
 
     def findVariants(tag):
         return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
 
+    variants = {}
     soup = BeautifulSoup(content, 'lxml')
     res = soup.find_all(findVariants)
     if res:
