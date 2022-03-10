@@ -2,3 +2,7 @@ ansible/inventory/
 app/src/creds.json
 *.pyc
 __pycache__
+.idea/bikedealsbot2.iml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/workspace.xml
