@@ -685,13 +685,15 @@ async def checkSKU():
                 doc['instock_prev'] = doc['instock']
             else:
                 doc['instock_prev'] = None
-            if sku['price'] != doc['price'] and sku['currency'] == doc['currency']:
-                doc['price_prev'] = doc['price']
-            else:
-                doc['price_prev'] = None
+
+            if sku['currency'] == doc['currency']:
+                if sku['price'] != doc['price']:
+                    doc['price_prev'] = doc['price']
+                else:
+                    doc['price_prev'] = None
+                doc['price'] = sku['price']
 
             doc['instock'] = sku['instock']
-            doc['price'] = sku['price']
             doc['errors'] = 0
             doc['lastgoodts'] = int(time())
         else:
