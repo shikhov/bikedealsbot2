@@ -76,11 +76,8 @@ dp.middleware.setup(LoggingMiddleware())
 async def logMessage(message):
     if message.from_user.id == ADMINCHATID: return
 
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-    dispname = first_name + ' ' + last_name if last_name else first_name
-    logentry = '<b>' + dispname + username + ':</b> ' + message.text
+    logentry = '<b>' + message.from_user.fullname + username + ':</b> ' + message.text
     await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
 
 
