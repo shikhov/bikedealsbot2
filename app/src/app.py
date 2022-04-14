@@ -77,7 +77,7 @@ async def logMessage(message):
     if message.from_user.id == ADMINCHATID: return
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-    logentry = '<b>' + message.from_user.fullname + username + ':</b> ' + message.text
+    logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
     await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
 
 
