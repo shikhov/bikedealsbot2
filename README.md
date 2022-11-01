@@ -8,5 +8,5 @@
 ## Реализация
 * Python 3.10+
 * фреймворк: aiogram
-* база данных: Cloudant
+* база данных: MongoDB
 * запуск фоновых заданий: Advanced Python Scheduler

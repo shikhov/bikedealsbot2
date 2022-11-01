@@ -2,7 +2,6 @@ import ast
 import asyncio
 import json
 import logging
-import os
 import re
 import zlib
 from hashlib import md5
@@ -15,29 +14,19 @@ from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils import exceptions
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from cloudant.adapters import Replay429Adapter
-from cloudant.client import Cloudant
-from cloudant.query import Query
 from pytz import timezone
+from pymongo import MongoClient
 
-from config import DBSETTINGS, DBSKU, DBSKUCACHE, DBUSERS
-
-curdir = os.path.dirname(os.path.abspath(__file__))
-credsfile = os.path.join(curdir, 'creds.json')
-creds = json.load(open(credsfile))
-DB_APIKEY = creds['apikey']
-DB_URL = creds['url']
-
-def getDb(dbname):
-    return Cloudant.iam(None, DB_APIKEY, url=DB_URL, connect=True, adapter=Replay429Adapter(retries=10, initialBackoff=0.01))[dbname]
+from config import CONNSTRING, DBNAME
 
 def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
+    global BANNERDONATE
 
-    db = getDb(DBSETTINGS)
-    settings = db['settings']
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    settings = db.settings.find_one({'_id': 'settings'})
 
     TOKEN = settings['TOKEN']
     ADMINCHATID = settings['ADMINCHATID']
@@ -52,10 +41,28 @@ def loadSettings():
     LOGCHATID = settings['LOGCHATID']
     BANNERSTART = settings['BANNERSTART']
     BANNERHELP = settings['BANNERHELP']
+    BANNERDONATE = settings['BANNERDONATE']
 
 class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
         super(LoggingMiddleware, self).__init__()
+
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        if message.text == '/start': return
+
+        db = MongoClient(CONNSTRING).get_database(DBNAME)
+        chat_id = str(message.from_user.id)
+        if not db.users.find_one({'_id': chat_id}):
+            await message.answer('🖐 Привет, давно не виделись! Бот снова работает 🥳\nК сожалению, все сохраненные товары потеряны, придется добавить их заново 😢')
+            data = {
+                '_id': chat_id,
+                'first_name': message.from_user.first_name,
+                'last_name': message.from_user.last_name,
+                'username': message.from_user.username,
+                'enable': True
+            }
+            db.users.insert_one(data)
+
 
     async def on_post_process_message(self, message: types.Message, results, data: dict):
         await logMessage(message)
@@ -74,6 +81,7 @@ dp.middleware.setup(LoggingMiddleware())
 
 
 async def logMessage(message):
+    if not LOGCHATID: return
     if message.from_user.id == ADMINCHATID: return
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
@@ -104,24 +112,17 @@ async def processCmdStart(message: types.Message):
     msg += '\n'.join(getStoreUrls(activeonly=True))
     await message.answer(msg)
 
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
     chat_id = str(message.from_user.id)
+    data = {
+        'first_name': message.from_user.first_name,
+        'last_name': message.from_user.last_name,
+        'username': message.from_user.username,
+        'enable': True
+    }
+    db.users.update_one({'_id' : chat_id }, {'$set': data}, upsert=True)
+    db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
-    db = getDb(DBUSERS)
-    doc = get_or_create(db, chat_id)
-    doc['first_name'] = message.from_user.first_name
-    doc['last_name'] = message.from_user.last_name
-    doc['username'] = message.from_user.username
-    doc['enable'] = True
-    doc.save()
-
-    db = getDb(DBSKU)
-    selector = {'chatid': chat_id}
-    docs = Query(db, selector=selector)()['docs']
-    for entry in docs:
-        if entry['_id'] not in db: continue
-        doc = db[entry['_id']]
-        doc['enable'] = True
-        doc.save()
 
 
 @dp.message_handler(commands='bc', chat_id=ADMINCHATID)
@@ -131,22 +132,21 @@ async def processCmdBroadcast(message: types.Message):
     msg_hash = md5(msg.encode('utf-8')).hexdigest()
     count = 0
 
-    db = getDb(DBUSERS)
-    docs = Query(db, selector={'enable': True})()['docs']
-    for entry in docs:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'enable': True}
+    for doc in db.users.find(query):
         count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
 
         await asyncio.sleep(0.1)
-        doc = db[entry['_id']]
         if 'broadcasts' not in doc: doc['broadcasts'] = []
         if msg_hash in doc['broadcasts']: continue
 
         try:
             await bot.send_message(chat_id=doc['_id'], text=msg)
             doc['broadcasts'].append(msg_hash)
-            doc.save()
+            db.users.update_one({'_id': doc['_id']}, {'$set': doc})
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
             disableUser(doc['_id'])
 
@@ -203,8 +203,6 @@ async def processB24(message: types.Message):
         await showVariants(store='B24', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
-
-
 @dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
 async def processBD(message: types.Message):
     chat_id = str(message.from_user.id)
@@ -229,9 +227,10 @@ async def processCmdAdd(message: types.Message):
 async def processCmdDel(message: types.Message):
     chat_id = str(message.from_user.id)
     docid = chat_id + '_' + message.text.replace('/del_', '').upper()
-    db = getDb(DBSKU)
-    if docid in db:
-        db[docid].delete()
+    query = {'_id': docid}
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    if db.sku.find_one(query):
+        db.sku.delete_one(query)
         await message.answer('Удалено')
         return
     await message.answer('Какая-то ошибка 😧')
@@ -244,19 +243,23 @@ async def processCmdHelp(message: types.Message):
     await message.answer(msg)
 
 
+@dp.message_handler(commands='donate', chat_type='private')
+async def processCmdDonate(message: types.Message):
+    await message.answer(BANNERDONATE)
+
+
 @dp.message_handler(commands='list', chat_type='private')
 async def processCmdList(message: types.Message):
     chat_id = str(message.from_user.id)
-    db = getDb(DBSKU)
-    selector = {'chatid': chat_id}
-    docs = Query(db, selector=selector)()['docs']
-    if len(docs) == 0:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'chat_id': chat_id}
+    if db.sku.count_documents(query) == 0:
         await message.answer('Ваш список пуст')
         return
 
     text_array = ['Отслеживаемые товары:']
 
-    for doc in docs:
+    for doc in db.sku.find(query):
         key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
         line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + '\n' + '<i>Удалить: /del_' + key + '</i>'
         text_array.append(line)
@@ -268,17 +271,33 @@ async def processCmdList(message: types.Message):
 async def processCmdStat(message: types.Message):
     sent_msg = await message.answer('Getting stat...')
 
-    db = getDb(DBUSERS)
-    usersall = len(Query(db, selector={'_id': {'$gt': '0'}})()['docs'])
-    usersactive = len(Query(db, selector={'enable': True})()['docs'])
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
 
-    db = getDb(DBSKU)
-    docs = Query(db, selector={'chatid': {'$exists': True}})()['docs']
-    skuall = len(docs)
-    skubyusers = {}
-    for doc in docs: skubyusers[doc['chatid']] = 'foo'
-    userswsku = len(skubyusers.keys())
-    skuactive = len(Query(db, selector={'enable': True})()['docs'])
+    usersall = db.users.count_documents({})
+    usersactive = db.users.count_documents({'enable': True})
+    skuall = db.sku.count_documents({})
+    docs = db.users.aggregate([
+        {
+            '$lookup':
+            {
+                'from': "sku",
+                'localField': "_id",
+                'foreignField': "chat_id",
+                'as': "sku_docs"
+            }
+        },
+        {
+            '$addFields': { 'sku_count': { '$size': "$sku_docs" } }
+        },
+        {
+            '$match': { 'sku_count': { '$ne': 0 } }
+        },
+        {
+            '$count': 'count'
+        }
+    ])
+    userswsku = docs.next()['count']
+    skuactive = db.sku.count_documents({'enable': True})
 
     msg = ''
     msg += '<b>Total users:</b> ' + str(usersall) + '\n'
@@ -288,8 +307,38 @@ async def processCmdStat(message: types.Message):
     msg += '<b>Active SKU:</b> ' + str(skuactive) + '\n'
 
     for key in getStoreKeys(activeonly=False):
-        num = len(Query(db, selector={'store': key})()['docs'])
+        num = db.sku.count_documents({'store': key})
         msg += '<b>' + key + ':</b> ' + str(num) + '\n'
+
+    TOPNUMBER = 10
+    docs = db.users.aggregate([
+        {
+            '$lookup':
+            {
+                'from': "sku",
+                'localField': "_id",
+                'foreignField': "chat_id",
+                'as': "sku_docs"
+            }
+        },
+        {
+            '$addFields': { 'sku_count': { '$size': "$sku_docs" } }
+        },
+        {
+            '$match': { 'sku_count': { '$ne': 0 } }
+        },
+        {
+            '$sort': { "sku_count": -1 }
+        },
+        {
+            '$limit': TOPNUMBER
+        }
+    ])
+    msg += '\n<b>Top ' + str(TOPNUMBER) + ' users:</b>\n'
+    for doc in docs:
+        username = ' (' + doc['username'] + ')' if doc['username'] else ''
+        full_name = doc['first_name'] + ' ' + doc['last_name'] if doc['last_name'] else doc['first_name']
+        msg += full_name + username + ': ' + str(doc['sku_count']) + '\n'
 
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
@@ -299,12 +348,6 @@ async def sendOrEditMsg(msg, chat_id, message_id, msgtype):
         await bot.send_message(chat_id=chat_id, text=msg, reply_to_message_id=message_id)
     if msgtype == 'edit':
         await bot.edit_message_text(text=msg, chat_id=chat_id, message_id=message_id)
-
-
-def get_or_create(db, docid):
-    if docid in db:
-        return db[docid]
-    return db.create_document({'_id': docid})
 
 
 async def showVariants(store, url, chat_id, message_id):
@@ -331,16 +374,14 @@ async def showVariants(store, url, chat_id, message_id):
 
 
 async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
-    db = getDb(DBSKU)
-
-    selector = {'chatid': chat_id}
-    docs = Query(db, selector=selector)()['docs']
-    if len(docs) >= MAXITEMSPERUSER:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'chat_id': chat_id}
+    if db.sku.count_documents(query) >= MAXITEMSPERUSER:
         await sendOrEditMsg('⛔️ Увы, в данный момент добавить можно не более ' + str(MAXITEMSPERUSER) + ' позиций', chat_id, message_id, msgtype)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
-    if docid in db:
+    if db.sku.find_one({'_id': docid}):
         await sendOrEditMsg('️☝️ Товар уже есть в вашем списке', chat_id, message_id, msgtype)
         return
 
@@ -355,25 +396,27 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         return
 
     sku = variants[skuid]
-    dbsku = get_or_create(db, docid)
-    dbsku['chatid'] = chat_id
-    dbsku['skuid'] = skuid
-    dbsku['prodid'] = sku['prodid']
-    dbsku['variant'] = sku['variant']
-    dbsku['url'] = sku['url']
-    dbsku['name'] = sku['name']
-    dbsku['price'] = sku['price']
-    dbsku['currency'] = sku['currency']
-    dbsku['store'] = sku['store']
-    dbsku['instock'] = sku['instock']
-    dbsku['errors'] = 0
-    dbsku['enable'] = True
-    dbsku['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
-    dbsku['lastgoodts'] = int(time())
-    dbsku['lastcheckts'] = int(time())
-    dbsku['instock_prev'] = None
-    dbsku['price_prev'] = None
-    dbsku.save()
+    data = {
+        '_id': docid,
+        'chat_id': chat_id,
+        'skuid': skuid,
+        'prodid': sku['prodid'],
+        'variant': sku['variant'],
+        'url': sku['url'],
+        'name': sku['name'],
+        'price': sku['price'],
+        'currency': sku['currency'],
+        'store': sku['store'],
+        'instock': sku['instock'],
+        'errors': 0,
+        'enable': True,
+        'lastcheck': datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M'),
+        'lastcheckts': int(time()),
+        'lastgoodts': int(time()),
+        'instock_prev': None,
+        'price_prev': None
+    }
+    db.sku.insert_one(data)
 
     dispname = sku['variant']
     if not dispname: dispname = sku['name']
@@ -382,10 +425,10 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
 
 
 def getURL(store, prodid):
-    db = getDb(DBSKUCACHE)
-    docid = store + '_' + prodid
-    if docid in db:
-        return db[docid]['url']
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    doc = db.skucache.find_one({'_id': store + '_' + prodid})
+    if doc:
+        return doc['url']
     return None
 
 
@@ -411,11 +454,11 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
 
 def getVariants(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
-    db = getDb(DBSKUCACHE)
-    selector = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
-    docs = Query(db, selector=selector)(limit=1)['docs']
-    if len(docs) > 0:
-        return docs[0]['variants']
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
+    doc = db.skucache.find_one(query)
+    if doc:
+        return doc['variants']
 
     return stores[store]['parseFunction'](url)
 
@@ -570,17 +613,26 @@ def parseCRC(url):
 
 
 def parseSB(url):
+    req = Request(url)
+    req.add_header('Cookie', 'country=KZ; currency_relaunch=EUR; vat=hide')
     try:
-        content = urlopen(url).read().decode('iso-8859-15')
+        content = urlopen(req).read().decode('iso-8859-15')
     except Exception:
         return None
 
     matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', content, re.DOTALL)
     if not matches: return None
 
+    skus = None
+    name = None
     jsdata = json.loads(matches.group(1))
-    skus = jsdata[1]['offers']
-    name = jsdata[1]['name']
+    for x in jsdata:
+        skus = x.get('offers')
+        name = x.get('name')
+        if skus and name: break
+    if not skus: return None
+    if not name: return None
+
     prodid = str(zlib.crc32(url.encode('utf-8')))
 
     variants = {}
@@ -633,32 +685,32 @@ def getSkuString(sku, options):
 
 def cacheVariants(variants):
     first_sku = variants[list(variants)[0]]
-    db = getDb(DBSKUCACHE)
-    dbsku = get_or_create(db, first_sku['store'] + '_' + first_sku['prodid'])
-    dbsku['variants'] = variants
-    dbsku['timestamp'] = int(time())
-    dbsku['url'] = first_sku['url']
-    dbsku['store'] = first_sku['store']
-    dbsku.save()
+    docid = first_sku['store'] + '_' + first_sku['prodid']
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    data = {
+        'variants': variants,
+        'timestamp': int(time()),
+        'url': first_sku['url'],
+        'store': first_sku['store']
+    }
+    db.skucache.update_one({'_id': docid}, {'$set': data}, upsert=True)
 
 
 async def notify():
     def addMsg(msg):
-        if doc['chatid'] in msgs:
-            msgs[doc['chatid']].append(msg)
+        if doc['chat_id'] in msgs:
+            msgs[doc['chat_id']].append(msg)
         else:
-            msgs[doc['chatid']] = [msg]
+            msgs[doc['chat_id']] = [msg]
 
     msgs = {}
     bestdeals = {}
 
-    db = getDb(DBSKU)
-    selector = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
-    docs = Query(db, selector=selector)()['docs']
-    for entry in docs:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
+    for doc in db.sku.find(query):
         await asyncio.sleep(0.1)
-        if entry['_id'] not in db: continue
-        doc = db[entry['_id']]
+        if not db.sku.find_one({'_id': doc['_id']}): continue
         skustring = getSkuString(doc, ['store', 'url', 'price'])
 
         if not doc['instock_prev'] is None:
@@ -682,7 +734,7 @@ async def notify():
 
         doc['price_prev'] = None
         doc['instock_prev'] = None
-        doc.save()
+        db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
 
     for chatid in msgs:
         try:
@@ -695,31 +747,19 @@ async def notify():
 
 
 def disableUser(chat_id):
-    db = getDb(DBUSERS)
-    user = get_or_create(db, str(chat_id))
-    user['enable'] = False
-    user.save()
-
-    db = getDb(DBSKU)
-    selector = {'chatid': chat_id}
-    docs = Query(db, selector=selector)()['docs']
-    for entry in docs:
-        if entry['_id'] not in db: continue
-        doc = db[entry['_id']]
-        doc['enable'] = False
-        doc.save()
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
+    db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
 
 
 async def checkSKU():
     now = int(time())
 
-    db = getDb(DBSKU)
-    selector = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
-    docs = Query(db, selector=selector)()['docs']
-    for entry in docs:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
+    for doc in db.sku.find(query):
         await asyncio.sleep(0.1)
-        if entry['_id'] not in db: continue
-        doc = db[entry['_id']]
+        if not db.sku.find_one({'_id': doc['_id']}): continue
 
         # increase check interval for inactive SKU
         days_inactive = (now - doc['lastgoodts'])/86400
@@ -751,16 +791,15 @@ async def checkSKU():
 
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
-        doc.save()
+        db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
 
 
 async def errorsMonitor():
     bad = {}
     good = {}
-    db = getDb(DBSKU)
-    selector = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
-    docs = Query(db, selector=selector)()['docs']
-    for doc in docs:
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
+    for doc in db.sku.find(query):
         store = doc['store']
         errors = doc['errors']
         if not store in good: good[store] = 0
