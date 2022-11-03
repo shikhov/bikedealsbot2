@@ -9,7 +9,7 @@ from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils import exceptions
@@ -188,6 +188,16 @@ async def processSB(message: types.Message):
     if rg:
         url = rg.group(1)
         await showVariants(store='SB', url=url, chat_id=chat_id, message_id=message.message_id)
+
+
+@dp.message_handler(regexp=r'(https://www\.tradeinn\.com/\S+/\d+/p)', chat_type='private')
+async def processTI(message: types.Message):
+    chat_id = str(message.from_user.id)
+
+    rg = re.search(r'(https://www\.tradeinn\.com/\S+/\d+/p)', message.text)
+    if rg:
+        url = rg.group(1)
+        await showVariants(store='TI', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.com/p2(\d+)\.html)', chat_type='private')
@@ -655,6 +665,85 @@ def parseSB(url):
     return variants
 
 
+def parseTI(url):
+    req = Request(url)
+    req.add_header('Cookie', 'id_pais=164')
+    try:
+        content = urlopen(req).read().decode('utf-8')
+    except Exception:
+        return None
+
+    soup = BeautifulSoup(content, 'lxml')
+    res = soup.find_all(hreflang='en')
+    if not res: return None
+    if url != res[0]['href']:
+        url = res[0]['href']
+        req = Request(url)
+        req.add_header('Cookie', 'id_pais=164')
+        try:
+            content = urlopen(req).read().decode('utf-8')
+        except Exception:
+            return None
+        soup = BeautifulSoup(content, 'lxml')
+
+    matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
+    if not matches: return None
+    prodid = matches.group(1)
+
+    res = soup.find_all('h1', {'class': 'productName'})
+    if not res: return None
+    name = res[0].string
+
+    def findVariants(tag):
+        return tag.parent.get('id') == 'tallas_detalle'
+
+    res = soup.find_all(findVariants)
+    if not res: return None
+
+    varnames = {}
+    for child in res:
+        varid = child.get('value')
+        if not varid: return None
+        varnames[varid] = child.string
+
+    res = soup.find_all(itemtype='http://schema.org/Offer')
+    if not res: return None
+
+    variants = {}
+    for x in res:
+        skuid = None
+        price = None
+        instock = None
+        currency = None
+
+        for child in x.children:
+            if not isinstance(child, Tag): continue
+            if child.get('itemprop') == 'sku':
+                skuid = child['content']
+            if child.get('itemprop') == 'price':
+                price = child['content']
+            if child.get('itemprop') == 'availability':
+                instock = child['href'] == 'http://schema.org/InStock'
+            if child.get('itemprop') == 'priceCurrency':
+                currency = child['content']
+
+        if not (skuid and price and instock and currency): continue
+        if skuid not in varnames: continue
+
+        variants[skuid] = {}
+        variants[skuid]['variant'] = varnames[skuid]
+        variants[skuid]['prodid'] = prodid
+        variants[skuid]['price'] = int(float(price))
+        variants[skuid]['currency'] = currency
+        variants[skuid]['store'] = 'TI'
+        variants[skuid]['url'] = url
+        variants[skuid]['name'] = name
+        variants[skuid]['instock'] = instock
+
+    cacheVariants(variants)
+    return variants
+
+
 def getSkuString(sku, options):
     instock = sku['instock']
     url = sku['url']
@@ -821,6 +910,7 @@ stores['BC'] = {'active': True, 'parseFunction': parseBC, 'url': 'bike-component
 stores['SB'] = {'active': True, 'parseFunction': parseSB, 'url': 'starbike.com'}
 stores['B24'] = {'active': False, 'parseFunction': parseB24, 'url': 'bike24.com'}
 stores['BD'] = {'active': True, 'parseFunction': parseBD, 'url': 'bike-discount.de'}
+stores['TI'] = {'active': False, 'parseFunction': parseTI, 'url': 'tradeinn.com'}
 
 
 if __name__ == '__main__':
