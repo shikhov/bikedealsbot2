@@ -50,6 +50,7 @@ class LoggingMiddleware(BaseMiddleware):
 
     async def on_pre_process_message(self, message: types.Message, data: dict):
         if message.text == '/start': return
+        if message.chat.type != 'private': return
 
         db = MongoClient(CONNSTRING).get_database(DBNAME)
         chat_id = str(message.from_user.id)
