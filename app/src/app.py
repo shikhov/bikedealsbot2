@@ -23,7 +23,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE
+    global BANNERDONATE, STORES
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
@@ -42,6 +42,7 @@ def loadSettings():
     BANNERSTART = settings['BANNERSTART']
     BANNERHELP = settings['BANNERHELP']
     BANNERDONATE = settings['BANNERDONATE']
+    STORES = settings['STORES']
 
 class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
@@ -91,16 +92,16 @@ async def logMessage(message):
 
 def getStoreUrls(activeonly):
     arr = []
-    for key in stores:
-        if (activeonly and stores[key]['active']) or not activeonly:
-            arr.append(stores[key]['url'])
+    for key in STORES:
+        if (activeonly and STORES[key]['active']) or not activeonly:
+            arr.append(STORES[key]['url'])
     return arr
 
 
 def getStoreKeys(activeonly):
     arr = []
-    for key in stores:
-        if (activeonly and stores[key]['active']) or not activeonly:
+    for key in STORES:
+        if (activeonly and STORES[key]['active']) or not activeonly:
             arr.append(key)
     return arr
 
@@ -470,7 +471,7 @@ def getVariants(store, url):
     if doc:
         return doc['variants']
 
-    return stores[store]['parseFunction'](url)
+    return globals()['parse' + store](url)
 
 
 def parseB24(url):
@@ -862,17 +863,14 @@ async def checkSKU():
             sku = variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
                 doc['instock_prev'] = doc['instock']
-            else:
-                doc['instock_prev'] = None
+                doc['instock'] = sku['instock']
 
+            price_threshold = STORES[doc['store']]['price_threshold']
             if sku['currency'] == doc['currency']:
-                if sku['price'] != doc['price']:
+                if doc['price']*price_threshold < abs(sku['price'] - doc['price']):
                     doc['price_prev'] = doc['price']
-                else:
-                    doc['price_prev'] = None
-                doc['price'] = sku['price']
+                    doc['price'] = sku['price']
 
-            doc['instock'] = sku['instock']
             doc['errors'] = 0
             doc['lastgoodts'] = int(time())
         else:
@@ -899,18 +897,9 @@ async def errorsMonitor():
             bad[store] += 1
 
     for store in good:
-        if not stores[store]['active']: continue
+        if not STORES[store]['active']: continue
         if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
             await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
-
-
-stores = {}
-stores['CRC'] = {'active': True, 'parseFunction': parseCRC, 'url': 'chainreactioncycles.com'}
-stores['BC'] = {'active': True, 'parseFunction': parseBC, 'url': 'bike-components.de'}
-stores['SB'] = {'active': True, 'parseFunction': parseSB, 'url': 'starbike.com'}
-stores['B24'] = {'active': False, 'parseFunction': parseB24, 'url': 'bike24.com'}
-stores['BD'] = {'active': True, 'parseFunction': parseBD, 'url': 'bike-discount.de'}
-stores['TI'] = {'active': False, 'parseFunction': parseTI, 'url': 'tradeinn.com'}
 
 
 if __name__ == '__main__':
