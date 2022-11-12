@@ -668,6 +668,7 @@ def parseSB(url):
 
 
 def parseTI(url):
+    url = url.replace(chr(160), '')
     req = Request(url)
     req.add_header('Cookie', 'id_pais=164')
     try:
@@ -678,8 +679,9 @@ def parseTI(url):
     soup = BeautifulSoup(content, 'lxml')
     res = soup.find_all(hreflang='en')
     if not res: return None
-    if url != res[0]['href']:
-        url = res[0]['href']
+    url_en = res[0]['href'].replace(chr(160), '')
+    if url != url_en:
+        url = url_en
         req = Request(url)
         req.add_header('Cookie', 'id_pais=164')
         try:
