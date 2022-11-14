@@ -475,6 +475,14 @@ def getVariants(store, url):
     return globals()['parse' + store](url)
 
 
+async def clearSKUCache():
+    tsexpired = int(time()) - CACHELIFETIME * 60
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    query = {'timestamp': {'$lt': tsexpired}}
+    db.skucache.delete_many(query)
+    await bot.send_message(LOGCHATID, 'SKU cache cleared', disable_web_page_preview=True)
+
+
 def parseB24(url):
     return None
 
@@ -909,8 +917,9 @@ if __name__ == '__main__':
     scheduler = AsyncIOScheduler()
     scheduler.start()
 
-    scheduler.add_job(checkSKU, 'interval', seconds=300)
-    scheduler.add_job(notify, 'interval', seconds=300)
-    scheduler.add_job(errorsMonitor, 'interval', seconds=CHECKINTERVAL*60)
+    scheduler.add_job(checkSKU, 'interval', minutes=5)
+    scheduler.add_job(notify, 'interval', minutes=5)
+    scheduler.add_job(errorsMonitor, 'interval', minutes=CHECKINTERVAL)
+    scheduler.add_job(clearSKUCache, 'cron', day_of_week='mon', hour=0, minute=0)
 
     executor.start_polling(dp, skip_updates=True)
