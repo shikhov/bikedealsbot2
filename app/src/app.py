@@ -480,7 +480,6 @@ async def clearSKUCache():
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'timestamp': {'$lt': tsexpired}}
     db.skucache.delete_many(query)
-    await bot.send_message(LOGCHATID, 'SKU cache cleared', disable_web_page_preview=True)
 
 
 def parseB24(url):
