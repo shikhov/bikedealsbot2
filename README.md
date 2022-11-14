@@ -4,6 +4,7 @@
 * bike-components.de
 * starbike.com
 * bike-discount.de
+* tradeinn.com
 
 ## Реализация
 * Python 3.10+
