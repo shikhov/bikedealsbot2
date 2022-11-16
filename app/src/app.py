@@ -8,6 +8,7 @@ from hashlib import md5
 from datetime import datetime
 from time import time
 from urllib.request import Request, urlopen
+import urllib.parse
 
 from bs4 import BeautifulSoup, Tag
 from aiogram import Bot, Dispatcher, executor, types
@@ -700,6 +701,7 @@ def parseSB(url):
 
 def parseTI(url):
     url = url.replace(chr(160), '')
+    url = urllib.parse.quote(url, safe=':/')
     req = Request(url)
     req.add_header('Cookie', 'id_pais=164')
     try:
