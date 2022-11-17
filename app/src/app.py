@@ -116,8 +116,7 @@ def getStoreKeys(activeonly):
 
 @dp.message_handler(commands='start', chat_type='private')
 async def processCmdStart(message: types.Message):
-    msg = BANNERSTART
-    msg += '\n'.join(getStoreUrls(activeonly=True))
+    msg = substituteVars(BANNERSTART)
     await message.answer(msg)
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
@@ -256,8 +255,7 @@ async def processCmdDel(message: types.Message):
 
 @dp.message_handler(commands='help', chat_type='private')
 async def processCmdHelp(message: types.Message):
-    msg = BANNERHELP
-    msg += '\n'.join(getStoreUrls(activeonly=True))
+    msg = substituteVars(BANNERHELP)
     await message.answer(msg)
 
 
@@ -448,6 +446,11 @@ def getURL(store, prodid):
     if doc:
         return doc['url']
     return None
+
+
+def substituteVars(text):
+    text = text.replace('%ACTIVESTOREURLS%', '\n'.join(getStoreUrls(activeonly=True)))
+    return text
 
 
 async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
