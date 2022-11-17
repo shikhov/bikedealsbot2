@@ -10,6 +10,11 @@ from time import time
 from urllib.request import Request, urlopen
 import urllib.parse
 
+# -- temporary solution
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+# -- temporary solution
+
 from bs4 import BeautifulSoup, Tag
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher.middlewares import BaseMiddleware
