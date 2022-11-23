@@ -6,15 +6,12 @@
     appname: bdbot2-test
 
   tasks:
-  - name: Delete src directory from host
-    file:
-      path: /{{appname}}
-      state: absent
+  - name: Sync src folder
+    synchronize: src='../app' dest='/{{appname}}'
 
   - name: Copy src to host
     copy: src={{ item.src }} dest={{ item.dest }}
     with_items:
-      - { src: "../app", dest: "/{{appname}}" }
       - { src: "../config/config_test.py", dest: "/{{appname}}/app/src/config.py" }
 
   - name: Delete old image
