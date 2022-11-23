@@ -520,8 +520,10 @@ def parseB24(url):
 
 
 def parseBD(url):
+    req = Request(url)
+    req.add_header('User-Agent', 'Mozilla/5.0')
     try:
-        response = urlopen(url)
+        response = urlopen(req)
         content = response.read().decode('utf-8')
     except Exception:
         return None
