@@ -481,7 +481,10 @@ def getVariants(store, url):
     if doc:
         return doc['variants']
 
-    return globals()['parse' + store](url)
+    variants = globals()['parse' + store](url)
+    if variants:
+        cacheVariants(variants)
+    return variants
 
 
 async def clearSKUCache():
@@ -606,7 +609,6 @@ def parseBC(url):
         variants[skuid]['name'] = (json['brand']['name'] + ' ' + json['name'].replace('\/', '/'))
         variants[skuid]['instock'] = 'InStock' in sku['availability']
 
-    cacheVariants(variants)
     return variants
 
 
@@ -661,7 +663,6 @@ def parseCRC(url):
             variants[skuid]['name'] = prodname
             variants[skuid]['instock'] = sku['isInStock'] == 'true'
 
-        cacheVariants(variants)
         return variants
     return None
 
@@ -705,7 +706,6 @@ def parseSB(url):
         variants[skuid]['name'] = name
         variants[skuid]['instock'] = (sku['availability'] == 'InStock')
 
-    cacheVariants(variants)
     return variants
 
 
@@ -787,7 +787,6 @@ def parseTI(url):
         variants[skuid]['name'] = name
         variants[skuid]['instock'] = instock
 
-    cacheVariants(variants)
     return variants
 
 
