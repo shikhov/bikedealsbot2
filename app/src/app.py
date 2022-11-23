@@ -562,9 +562,9 @@ def parseBD(url):
             variants[skuid]['name'] = name
             variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
     else:
-        matches = re.search(r'<link itemprop="availability" href="(.+?)"', content, re.DOTALL)
+        matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', content, re.DOTALL)
         if not matches: return None
-        instock = (matches.group(1) == 'https://schema.org/InStock')
+        instock = (matches.group(1) == 'InStock')
 
         variants['0'] = {}
         variants['0']['variant'] = ''
