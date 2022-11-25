@@ -29,7 +29,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, STORES
+    global BANNERDONATE, STORES, DEBUG
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
@@ -49,6 +49,8 @@ def loadSettings():
     BANNERHELP = settings['BANNERHELP']
     BANNERDONATE = settings['BANNERDONATE']
     STORES = settings['STORES']
+    DEBUG = settings['DEBUG']
+
 
 class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
@@ -876,6 +878,7 @@ async def notify():
             await paginatedTgMsg(msgs[chatid], chatid)
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
             disableUser(chatid)
+        if DEBUG and LOGCHATID: await paginatedTgMsg(msgs[chatid], LOGCHATID)
         await asyncio.sleep(0.1)
 
     if BESTDEALSCHATID: await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
