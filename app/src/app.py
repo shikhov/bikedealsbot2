@@ -29,7 +29,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, STORES, DEBUG
+    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
@@ -48,6 +48,7 @@ def loadSettings():
     BANNERSTART = settings['BANNERSTART']
     BANNERHELP = settings['BANNERHELP']
     BANNERDONATE = settings['BANNERDONATE']
+    BANNEROLDUSER = settings['BANNEROLDUSER']
     STORES = settings['STORES']
     DEBUG = settings['DEBUG']
 
@@ -63,7 +64,7 @@ class LoggingMiddleware(BaseMiddleware):
         db = MongoClient(CONNSTRING).get_database(DBNAME)
         chat_id = str(message.from_user.id)
         if not db.users.find_one({'_id': chat_id}):
-            await message.answer('🖐 Привет, давно не виделись! Бот снова работает 🥳\nК сожалению, все сохраненные товары потеряны, придется добавить их заново 😢')
+            await message.answer(BANNEROLDUSER)
             data = {
                 '_id': chat_id,
                 'first_name': message.from_user.first_name,
