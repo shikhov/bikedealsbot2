@@ -7,13 +7,8 @@ import zlib
 from hashlib import md5
 from datetime import datetime
 from time import time
-from urllib.request import Request, urlopen
 import urllib.parse
-
-# -- temporary solution
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
-# -- temporary solution
+import requests
 
 from bs4 import BeautifulSoup, Tag
 from aiogram import Bot, Dispatcher, executor, types
@@ -526,23 +521,24 @@ def parseB24(url):
 
 
 def parseBD(url):
-    req = Request(url)
-    req.add_header('User-Agent', 'Mozilla/5.0')
+    headers = {
+        'User-Agent': 'Mozilla/5.0'
+    }
     try:
-        response = urlopen(req)
-        content = response.read().decode('utf-8')
+        response = requests.get(url, headers=headers)
     except Exception:
         return None
 
-    url = response.geturl()
-    matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
+    url = response.url
+
+    matches = re.search(r'dataLayer = \[(.+?)\]', response.text, re.DOTALL)
     if not matches: return None
 
     jsdata = json.loads(matches.group(1))
     prodid = str(jsdata['productID'])
     currency = jsdata['productCurrency']
 
-    matches = re.search(r'dataLayer.push \((.+?)\);', content, re.DOTALL)
+    matches = re.search(r'dataLayer.push \((.+?)\);', response.text, re.DOTALL)
     if not matches: return None
 
     jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
@@ -553,7 +549,7 @@ def parseBD(url):
         return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
 
     variants = {}
-    soup = BeautifulSoup(content, 'lxml')
+    soup = BeautifulSoup(response.text, 'lxml')
     res = soup.find_all(findVariants)
     if res:
         for x in res:
@@ -568,7 +564,7 @@ def parseBD(url):
             variants[skuid]['name'] = name
             variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
     else:
-        matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', content, re.DOTALL)
+        matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', response.text, re.DOTALL)
         if not matches: return None
         instock = (matches.group(1) == 'InStock')
 
@@ -587,12 +583,13 @@ def parseBD(url):
 
 
 def parseBC(url):
+    headers = {}
     try:
-        content = urlopen(url).read().decode('utf-8')
+        response = requests.get(url, headers=headers)
     except Exception:
         return None
 
-    matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', content, re.DOTALL)
+    matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
     if not matches: return None
 
     variants = {}
@@ -617,20 +614,17 @@ def parseBC(url):
 
 def parseCRC(url):
     headerslist = {
-        'RUB': {'User-Agent': 'Mozilla/5.0', 'Cookie': 'countryCode=RU; languageCode=en; currencyCode=RUB'},
-        'GBP': {'User-Agent': 'Mozilla/5.0', 'Cookie': 'countryCode=GB; languageCode=en; currencyCode=GBP'}}
+        'RUB': {'Cookie': 'countryCode=RU; languageCode=en; currencyCode=RUB'},
+        'GBP': {'Cookie': 'countryCode=GB; languageCode=en; currencyCode=GBP'}
+    }
 
     for currency in headerslist:
-        req = Request(url)
-        headers = headerslist[currency]
-        for header in headers:
-            req.add_header(header, headers[header])
         try:
-            content = urlopen(req).read().decode('utf-8')
+            response = requests.get(url, headers=headerslist[currency])
         except Exception:
             return None
 
-        matches = re.search(r'window\.universal_variable\s+=\s+(.+?)</script>', content, re.DOTALL)
+        matches = re.search(r'window\.universal_variable\s+=\s+(.+?)</script>', response.text, re.DOTALL)
         if not matches: continue
 
         universal = ast.literal_eval(matches.group(1))
@@ -640,12 +634,12 @@ def parseCRC(url):
         prodid = product['id'].replace('prod', '')
         prodname = (product['manufacturer'] + ' ' + product['name']).replace('\\"', '"')
 
-        matches = re.search(r'var\s+variantsAray\s+=\s+(\[.+?);', content, re.DOTALL)
+        matches = re.search(r'var\s+variantsAray\s+=\s+(\[.+?);', response.text, re.DOTALL)
         if not matches: continue
 
         options = ast.literal_eval(matches.group(1))
 
-        matches = re.search(r'var\s+allVariants\s+=\s+({.+?);', content, re.DOTALL)
+        matches = re.search(r'var\s+allVariants\s+=\s+({.+?);', response.text, re.DOTALL)
         if not matches: continue
 
         variants = {}
@@ -671,14 +665,15 @@ def parseCRC(url):
 
 
 def parseSB(url):
-    req = Request(url)
-    req.add_header('Cookie', 'country=KZ; currency_relaunch=EUR; vat=hide')
+    headers = {
+        'Cookie': 'country=KZ; currency_relaunch=EUR; vat=hide'
+    }
     try:
-        content = urlopen(req).read().decode('iso-8859-15')
+        response = requests.get(url, headers=headers)
     except Exception:
         return None
 
-    matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', content, re.DOTALL)
+    matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', response.text, re.DOTALL)
     if not matches: return None
 
     skus = None
@@ -713,28 +708,27 @@ def parseSB(url):
 
 
 def parseTI(url):
+    headers = {
+        'Cookie': 'id_pais=164'
+    }
     url = url.replace(chr(160), '')
     url = urllib.parse.quote(url, safe=':/')
-    req = Request(url)
-    req.add_header('Cookie', 'id_pais=164')
     try:
-        content = urlopen(req).read().decode('utf-8')
+        response = requests.get(url, headers=headers)
     except Exception:
         return None
 
-    soup = BeautifulSoup(content, 'lxml')
+    soup = BeautifulSoup(response.text, 'lxml')
     res = soup.find_all(hreflang='en')
     if not res: return None
     url_en = res[0]['href'].replace(chr(160), '')
     if url != url_en:
         url = url_en
-        req = Request(url)
-        req.add_header('Cookie', 'id_pais=164')
         try:
-            content = urlopen(req).read().decode('utf-8')
+            response = requests.get(url, headers=headers)
         except Exception:
             return None
-        soup = BeautifulSoup(content, 'lxml')
+        soup = BeautifulSoup(response.text, 'lxml')
 
     matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
     if not matches: return None
