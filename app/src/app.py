@@ -795,7 +795,7 @@ def getSkuString(sku, options):
     price = str(sku['price'])
     currency = sku['currency']
     store = sku['store']
-    errors = sku['errors']
+    errors = sku['errors'] if 'errors' in sku else 0
 
     storename = ''
     urlname = ''
