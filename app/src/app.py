@@ -169,9 +169,9 @@ async def processCmdReload(message: types.Message):
 async def processBC(message: types.Message):
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https://www\.bike-components\.de/\S+p(\d+)\/)', message.text)
+    rg = re.search(r'(https://www\.bike-components\.de/)(.+?)(/\S+p(\d+)\/)', message.text)
     if rg:
-        url = rg.group(1)
+        url = rg.group(1) + 'en' + rg.group(3)
         await showVariants(store='BC', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
@@ -589,6 +589,8 @@ def parseBC(url):
     except Exception:
         return None
 
+    url = response.url
+
     matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
     if not matches: return None
 
@@ -795,7 +797,7 @@ def getSkuString(sku, options):
     price = str(sku['price'])
     currency = sku['currency']
     store = sku['store']
-    errors = sku['errors']
+    errors = sku['errors'] if 'errors' in sku else 0
 
     storename = ''
     urlname = ''
