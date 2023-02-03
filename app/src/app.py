@@ -662,39 +662,37 @@ def parseSB(url):
     }
     try:
         response = requests.get(url, headers=headers)
+
+        skus = None
+        name = None
+        matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', response.text, re.DOTALL)
+        jsdata = json.loads(matches.group(1))
+        for x in jsdata:
+            skus = x.get('offers')
+            name = x.get('name')
+            if skus and name: break
+        if not skus: return None
+        if not name: return None
+
+        prodid = str(zlib.crc32(url.encode('utf-8')))
+
+        variants = {}
+        for sku in skus:
+            skuid = sku['sku']
+            if skuid is None: skuid = '0'
+            variants[skuid] = {}
+            variants[skuid]['variant'] = sku['name'].replace(name, '').strip()
+            variants[skuid]['prodid'] = prodid
+            tmp = sku['price'].split('.')
+            if len(tmp) == 3: sku['price'] = tmp[0] + tmp[1]
+            variants[skuid]['price'] = int(float(sku['price']))
+            variants[skuid]['currency'] = sku['priceCurrency']
+            variants[skuid]['store'] = 'SB'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = name
+            variants[skuid]['instock'] = (sku['availability'] == 'InStock')
     except Exception:
         return None
-
-    matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', response.text, re.DOTALL)
-    if not matches: return None
-
-    skus = None
-    name = None
-    jsdata = json.loads(matches.group(1))
-    for x in jsdata:
-        skus = x.get('offers')
-        name = x.get('name')
-        if skus and name: break
-    if not skus: return None
-    if not name: return None
-
-    prodid = str(zlib.crc32(url.encode('utf-8')))
-
-    variants = {}
-    for sku in skus:
-        skuid = sku['sku']
-        if skuid is None: skuid = '0'
-        variants[skuid] = {}
-        variants[skuid]['variant'] = sku['name'].replace(name, '').strip()
-        variants[skuid]['prodid'] = prodid
-        tmp = sku['price'].split('.')
-        if len(tmp) == 3: sku['price'] = tmp[0] + tmp[1]
-        variants[skuid]['price'] = int(float(sku['price']))
-        variants[skuid]['currency'] = sku['priceCurrency']
-        variants[skuid]['store'] = 'SB'
-        variants[skuid]['url'] = url
-        variants[skuid]['name'] = name
-        variants[skuid]['instock'] = (sku['availability'] == 'InStock')
 
     return variants
 
