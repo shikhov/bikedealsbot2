@@ -199,9 +199,9 @@ async def processSB(message: types.Message):
 async def processTI(message: types.Message):
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https://www\.tradeinn\.com/\S+/\d+/p)', message.text)
+    rg = re.search(r'(https://www\.tradeinn\.com/.+?/)(.+?)(/\S+/\d+/p)', message.text)
     if rg:
-        url = rg.group(1)
+        url = rg.group(1) + 'en' + rg.group(3)
         await showVariants(store='TI', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
@@ -707,18 +707,12 @@ def parseTI(url):
     url = urllib.parse.quote(url, safe=':/')
     try:
         response = requests.get(url, headers=headers)
-
-        soup = BeautifulSoup(response.text, 'lxml')
-        res = soup.find_all(hreflang='en')
-        url_en = res[0]['href'].replace(chr(160), '')
-        if url != url_en:
-            url = url_en
-            response = requests.get(url, headers=headers)
-            soup = BeautifulSoup(response.text, 'lxml')
+        url = response.url
 
         matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
         prodid = matches.group(1)
 
+        soup = BeautifulSoup(response.text, 'lxml')
         res = soup.find_all('h1', {'class': 'productName'})
         name = res[0].string
 
