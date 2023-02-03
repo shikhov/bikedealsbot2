@@ -526,59 +526,52 @@ def parseBD(url):
     }
     try:
         response = requests.get(url, headers=headers)
+        url = response.url
+
+        matches = re.search(r'dataLayer = \[(.+?)\]', response.text, re.DOTALL)
+        jsdata = json.loads(matches.group(1))
+        prodid = str(jsdata['productID'])
+        currency = jsdata['productCurrency']
+
+        matches = re.search(r'dataLayer.push \((.+?)\);', response.text, re.DOTALL)
+        jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
+        name = jsdata['brand'] + ' ' + jsdata['name']
+        price = jsdata['price']
+
+        def findVariants(tag):
+            return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
+
+        variants = {}
+        soup = BeautifulSoup(response.text, 'lxml')
+        res = soup.find_all(findVariants)
+        if res:
+            for x in res:
+                skuid = x['value']
+                variants[skuid] = {}
+                variants[skuid]['variant'] = x['title']
+                variants[skuid]['prodid'] = prodid
+                variants[skuid]['price'] = int(float(x['price'])*0.841)
+                variants[skuid]['currency'] = currency
+                variants[skuid]['store'] = 'BD'
+                variants[skuid]['url'] = url
+                variants[skuid]['name'] = name
+                variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
+        else:
+            matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', response.text, re.DOTALL)
+            instock = (matches.group(1) == 'InStock')
+
+            variants['0'] = {}
+            variants['0']['variant'] = ''
+            variants['0']['prodid'] = prodid
+            variants['0']['price'] = int(float(price)*0.841)
+            variants['0']['currency'] = currency
+            variants['0']['store'] = 'BD'
+            variants['0']['url'] = url
+            variants['0']['name'] = name
+            variants['0']['instock'] = instock
     except Exception:
         return None
 
-    url = response.url
-
-    matches = re.search(r'dataLayer = \[(.+?)\]', response.text, re.DOTALL)
-    if not matches: return None
-
-    jsdata = json.loads(matches.group(1))
-    prodid = str(jsdata['productID'])
-    currency = jsdata['productCurrency']
-
-    matches = re.search(r'dataLayer.push \((.+?)\);', response.text, re.DOTALL)
-    if not matches: return None
-
-    jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
-    name = jsdata['brand'] + ' ' + jsdata['name']
-    price = jsdata['price']
-
-    def findVariants(tag):
-        return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
-
-    variants = {}
-    soup = BeautifulSoup(response.text, 'lxml')
-    res = soup.find_all(findVariants)
-    if res:
-        for x in res:
-            skuid = x['value']
-            variants[skuid] = {}
-            variants[skuid]['variant'] = x['title']
-            variants[skuid]['prodid'] = prodid
-            variants[skuid]['price'] = int(float(x['price'])*0.841)
-            variants[skuid]['currency'] = currency
-            variants[skuid]['store'] = 'BD'
-            variants[skuid]['url'] = url
-            variants[skuid]['name'] = name
-            variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
-    else:
-        matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', response.text, re.DOTALL)
-        if not matches: return None
-        instock = (matches.group(1) == 'InStock')
-
-        variants['0'] = {}
-        variants['0']['variant'] = ''
-        variants['0']['prodid'] = prodid
-        variants['0']['price'] = int(float(price)*0.841)
-        variants['0']['currency'] = currency
-        variants['0']['store'] = 'BD'
-        variants['0']['url'] = url
-        variants['0']['name'] = name
-        variants['0']['instock'] = instock
-
-    cacheVariants(variants)
     return variants
 
 
@@ -586,30 +579,27 @@ def parseBC(url):
     headers = {}
     try:
         response = requests.get(url, headers=headers)
+        url = response.url
+
+        matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
+        variants = {}
+        json = ast.literal_eval(matches.group(1))
+        skus = json['offers']
+        for sku in skus:
+            skuid = sku['sku'].replace(str(json['sku']), '').replace('-', '')
+            variants[skuid] = {}
+            variants[skuid]['variant'] = sku['name'].replace('\/', '/')
+            variants[skuid]['prodid'] = str(json['sku'])
+            variants[skuid]['price'] = int(sku['priceSpecification']['price'])
+            if 'True' in sku['priceSpecification']['valueAddedTaxIncluded']:
+                variants[skuid]['price'] = int(sku['priceSpecification']['price']*0.84)
+            variants[skuid]['currency'] = sku['priceSpecification']['priceCurrency']
+            variants[skuid]['store'] = 'BC'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = (json['brand']['name'] + ' ' + json['name'].replace('\/', '/'))
+            variants[skuid]['instock'] = 'InStock' in sku['availability']
     except Exception:
         return None
-
-    url = response.url
-
-    matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
-    if not matches: return None
-
-    variants = {}
-    json = ast.literal_eval(matches.group(1))
-    skus = json['offers']
-    for sku in skus:
-        skuid = sku['sku'].replace(str(json['sku']), '').replace('-', '')
-        variants[skuid] = {}
-        variants[skuid]['variant'] = sku['name'].replace('\/', '/')
-        variants[skuid]['prodid'] = str(json['sku'])
-        variants[skuid]['price'] = int(sku['priceSpecification']['price'])
-        if 'True' in sku['priceSpecification']['valueAddedTaxIncluded']:
-            variants[skuid]['price'] = int(sku['priceSpecification']['price']*0.84)
-        variants[skuid]['currency'] = sku['priceSpecification']['priceCurrency']
-        variants[skuid]['store'] = 'BC'
-        variants[skuid]['url'] = url
-        variants[skuid]['name'] = (json['brand']['name'] + ' ' + json['name'].replace('\/', '/'))
-        variants[skuid]['instock'] = 'InStock' in sku['availability']
 
     return variants
 
@@ -717,74 +707,67 @@ def parseTI(url):
     url = urllib.parse.quote(url, safe=':/')
     try:
         response = requests.get(url, headers=headers)
+
+        soup = BeautifulSoup(response.text, 'lxml')
+        res = soup.find_all(hreflang='en')
+        url_en = res[0]['href'].replace(chr(160), '')
+        if url != url_en:
+            url = url_en
+            response = requests.get(url, headers=headers)
+            soup = BeautifulSoup(response.text, 'lxml')
+
+        matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
+        prodid = matches.group(1)
+
+        res = soup.find_all('h1', {'class': 'productName'})
+        name = res[0].string
+
+        def findVariants(tag):
+            return tag.parent.get('id') == 'tallas_detalle'
+
+        res = soup.find_all(findVariants)
+        if not res: return None
+
+        varnames = {}
+        for child in res:
+            varid = child['value']
+            varnames[varid] = child.string
+
+        res = soup.find_all(itemtype='http://schema.org/Offer')
+        if not res: return None
+
+        variants = {}
+        for x in res:
+            skuid = None
+            price = None
+            instock = None
+            currency = None
+
+            for child in x.children:
+                if not isinstance(child, Tag): continue
+                if child.get('itemprop') == 'sku':
+                    skuid = child['content']
+                if child.get('itemprop') == 'price':
+                    price = child['content']
+                if child.get('itemprop') == 'availability':
+                    instock = child['href'] == 'http://schema.org/InStock'
+                if child.get('itemprop') == 'priceCurrency':
+                    currency = child['content']
+
+            if not (skuid and price and instock and currency): continue
+            if skuid not in varnames: continue
+
+            variants[skuid] = {}
+            variants[skuid]['variant'] = varnames[skuid]
+            variants[skuid]['prodid'] = prodid
+            variants[skuid]['price'] = int(float(price))
+            variants[skuid]['currency'] = currency
+            variants[skuid]['store'] = 'TI'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = name
+            variants[skuid]['instock'] = instock
     except Exception:
         return None
-
-    soup = BeautifulSoup(response.text, 'lxml')
-    res = soup.find_all(hreflang='en')
-    if not res: return None
-    url_en = res[0]['href'].replace(chr(160), '')
-    if url != url_en:
-        url = url_en
-        try:
-            response = requests.get(url, headers=headers)
-        except Exception:
-            return None
-        soup = BeautifulSoup(response.text, 'lxml')
-
-    matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
-    if not matches: return None
-    prodid = matches.group(1)
-
-    res = soup.find_all('h1', {'class': 'productName'})
-    if not res: return None
-    name = res[0].string
-
-    def findVariants(tag):
-        return tag.parent.get('id') == 'tallas_detalle'
-
-    res = soup.find_all(findVariants)
-    if not res: return None
-
-    varnames = {}
-    for child in res:
-        varid = child.get('value')
-        if not varid: return None
-        varnames[varid] = child.string
-
-    res = soup.find_all(itemtype='http://schema.org/Offer')
-    if not res: return None
-
-    variants = {}
-    for x in res:
-        skuid = None
-        price = None
-        instock = None
-        currency = None
-
-        for child in x.children:
-            if not isinstance(child, Tag): continue
-            if child.get('itemprop') == 'sku':
-                skuid = child['content']
-            if child.get('itemprop') == 'price':
-                price = child['content']
-            if child.get('itemprop') == 'availability':
-                instock = child['href'] == 'http://schema.org/InStock'
-            if child.get('itemprop') == 'priceCurrency':
-                currency = child['content']
-
-        if not (skuid and price and instock and currency): continue
-        if skuid not in varnames: continue
-
-        variants[skuid] = {}
-        variants[skuid]['variant'] = varnames[skuid]
-        variants[skuid]['prodid'] = prodid
-        variants[skuid]['price'] = int(float(price))
-        variants[skuid]['currency'] = currency
-        variants[skuid]['store'] = 'TI'
-        variants[skuid]['url'] = url
-        variants[skuid]['name'] = name
-        variants[skuid]['instock'] = instock
 
     return variants
 
