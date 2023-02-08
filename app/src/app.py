@@ -24,7 +24,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG
+    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
@@ -46,6 +46,7 @@ def loadSettings():
     BANNEROLDUSER = settings['BANNEROLDUSER']
     STORES = settings['STORES']
     DEBUG = settings['DEBUG']
+    HTTPTIMEOUT = settings['HTTPTIMEOUT']
 
 
 class LoggingMiddleware(BaseMiddleware):
@@ -525,7 +526,7 @@ def parseBD(url):
         'User-Agent': 'Mozilla/5.0'
     }
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
         url = response.url
 
         matches = re.search(r'dataLayer = \[(.+?)\]', response.text, re.DOTALL)
@@ -578,7 +579,7 @@ def parseBD(url):
 def parseBC(url):
     headers = {}
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
         url = response.url
 
         matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
@@ -612,7 +613,7 @@ def parseCRC(url):
 
     for currency in headerslist:
         try:
-            response = requests.get(url, headers=headerslist[currency])
+            response = requests.get(url, headers=headerslist[currency], timeout=HTTPTIMEOUT)
         except Exception:
             return None
 
@@ -661,7 +662,7 @@ def parseSB(url):
         'Cookie': 'country=KZ; currency_relaunch=EUR; vat=hide'
     }
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
 
         skus = None
         name = None
@@ -704,7 +705,7 @@ def parseTI(url):
     url = url.replace(chr(160), '')
     url = urllib.parse.quote(url, safe=':/')
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
         url = response.url
 
         matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
