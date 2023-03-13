@@ -9,6 +9,8 @@ from datetime import datetime
 from time import time
 import urllib.parse
 import requests
+from curl_cffi import requests as curl
+import crcmod.predefined
 
 from bs4 import BeautifulSoup, Tag
 from aiogram import Bot, Dispatcher, executor, types
@@ -74,6 +76,8 @@ class LoggingMiddleware(BaseMiddleware):
     async def on_post_process_message(self, message: types.Message, results, data: dict):
         await logMessage(message)
 
+
+crc16 = crcmod.predefined.Crc('crc-16')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -208,9 +212,6 @@ async def processTI(message: types.Message):
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.com/p2(\d+)\.html)', chat_type='private')
 async def processB24(message: types.Message):
-    await message.answer('К сожалению, Bike24 в настоящее время не поддерживается')
-    return
-
     chat_id = str(message.from_user.id)
 
     rg = re.search(r'(https://www\.bike24\.com/p2(\d+)\.html)', message.text)
@@ -518,7 +519,86 @@ async def removeInvalidSKU():
 
 
 def parseB24(url):
-    return None
+    try:
+        content = curl.get(url, impersonate='chrome110', timeout=HTTPTIMEOUT).text
+
+        matches = re.search(r'window\.dataLayer\.push\(({\\"vpv.+?})\);', content, re.DOTALL)
+        jsdata = json.loads(matches.group(1).replace('\\"', '"'))
+        instock = jsdata['isAvailable']
+        availdict = {}
+        for entry in jsdata['productOptionsAvailability']:
+            arr = entry.replace('\/', '/').split('|')
+            varname = arr[0].replace(':', '|')
+            varcount = arr[1]
+            availdict[varname] = varcount
+
+        def findDataProps(tag):
+            return tag.name == 'div' and tag.get('id') == 'add-to-cart'
+
+        soup = BeautifulSoup(content, 'lxml')
+        res = soup.find_all(findDataProps)
+        jsdata = json.loads(res[0]['data-props'])
+        price = int(float(jsdata['gtmData']['price']))
+        prodid = str(jsdata['gtmData']['id'])
+        name = jsdata['gtmData']['name'].replace('\/', '/')
+        variant = jsdata['gtmData']['variant'].replace('\/', '/')
+        currency = jsdata['productDetailPrice']['currencyCode']
+        coeff = 1.191
+
+        namesplit = name.split(' - ')
+        if len(namesplit) > 1:
+            name = namesplit[0]
+            variant = ', '.join(namesplit[1:]) + (', ' + variant if variant else '')
+
+        variants = {}
+
+        if jsdata['productOptionList']:
+            if len(jsdata['productOptionList']) == 1:
+                for sku in jsdata['productOptionList'][0]['optionValueList']:
+                    skuid = str(sku['id'])
+                    variants[skuid] = {}
+                    vartext = sku['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+                    variants[skuid]['instock'] = False
+                    if vartext in availdict:
+                        variants[skuid]['instock'] = (availdict[vartext] != '0')
+                    variants[skuid]['variant'] = ((variant + ', ' if variant else '') + vartext).replace('\/', '/').strip()
+                    variants[skuid]['prodid'] = prodid
+                    variants[skuid]['price'] = price + int(sku['surcharge']*coeff)
+                    variants[skuid]['currency'] = currency
+                    variants[skuid]['store'] = 'B24'
+                    variants[skuid]['url'] = url
+                    variants[skuid]['name'] = name
+            if len(jsdata['productOptionList']) == 2:
+                for sku1 in jsdata['productOptionList'][0]['optionValueList']:
+                    for sku2 in jsdata['productOptionList'][1]['optionValueList']:
+                        skuid = str(crc16.new((str(sku1['id']) + str(sku2['id'])).encode('utf-8')).crcValue)
+                        variants[skuid] = {}
+                        name1 = sku1['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+                        name2 = sku2['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+                        vartext = name1 + ' | ' + name2
+                        variants[skuid]['instock'] = (availdict[name1] != '0' and availdict[name2] != '0')
+                        variants[skuid]['variant'] = ((variant + ', ' if variant else '') + vartext).replace('\/', '/').strip()
+                        variants[skuid]['prodid'] = prodid
+                        variants[skuid]['price'] = price + int(sku1['surcharge']*coeff) + int(sku2['surcharge']*coeff)
+                        variants[skuid]['currency'] = currency
+                        variants[skuid]['store'] = 'B24'
+                        variants[skuid]['url'] = url
+                        variants[skuid]['name'] = name
+            if len(jsdata['productOptionList']) > 2: return None # there are no examples yet
+        else:
+            variants['0'] = {}
+            variants['0']['variant'] = variant
+            variants['0']['prodid'] = prodid
+            variants['0']['price'] = price
+            variants['0']['currency'] = currency
+            variants['0']['store'] = 'B24'
+            variants['0']['url'] = url
+            variants['0']['name'] = name
+            variants['0']['instock'] = instock
+    except Exception:
+        return None
+
+    return variants
 
 
 def parseBD(url):
