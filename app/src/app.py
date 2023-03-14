@@ -502,11 +502,11 @@ async def removeInvalidSKU():
     msgs = {}
     for doc in db.sku.find(query):
         user = db.users.find_one({'_id': doc['chat_id']})
-        if user['enable']:
-            skustring = getSkuString(doc, ['store', 'url'])
-            if doc['chat_id'] not in msgs:
-                msgs[doc['chat_id']] = [banner]
-            msgs[doc['chat_id']].append(skustring)
+        if not user['enable']: continue
+        skustring = getSkuString(doc, ['store', 'url'])
+        if doc['chat_id'] not in msgs:
+            msgs[doc['chat_id']] = [banner]
+        msgs[doc['chat_id']].append(skustring)
 
     db.sku.delete_many(query)
 
