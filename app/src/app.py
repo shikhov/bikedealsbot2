@@ -523,7 +523,10 @@ def parseB24(url):
         content = curl.get(url, impersonate='chrome110', timeout=HTTPTIMEOUT).text
 
         matches = re.search(r'window\.dataLayer\.push\(({\\"vpv.+?})\);', content, re.DOTALL)
-        jsdata = json.loads(matches.group(1).replace('\\"', '"'))
+        rawjson = matches.group(1)
+        rawjson = rawjson.replace('\\"', '"')
+        rawjson = rawjson.replace('\\\\"', '\\"')
+        jsdata = json.loads(rawjson)
         instock = jsdata['isAvailable']
         availdict = {}
         for entry in jsdata['productOptionsAvailability']:
