@@ -689,41 +689,30 @@ def parseBC(url):
 
 
 def parseCRC(url):
-    headerslist = {
-        'RUB': {'Cookie': 'countryCode=RU; languageCode=en; currencyCode=RUB'},
-        'GBP': {'Cookie': 'countryCode=GB; languageCode=en; currencyCode=GBP'}
+    headers = {
+        'Cookie': 'countryCode=KZ; languageCode=en; currencyCode=USD'
     }
+    try:
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
 
-    for currency in headerslist:
-        try:
-            response = requests.get(url, headers=headerslist[currency], timeout=HTTPTIMEOUT)
-        except Exception:
-            return None
+        matches = re.search(r'"priceCurrency":\s+"(.+?)",', response.text, re.DOTALL)
+        currency = matches.group(1)
 
         matches = re.search(r'window\.universal_variable\s+=\s+(.+?)</script>', response.text, re.DOTALL)
-        if not matches: continue
-
         universal = ast.literal_eval(matches.group(1))
-        if not ('product' in universal and universal['product']['price']): continue
-
         product = universal['product']
         prodid = product['id'].replace('prod', '')
         prodname = (product['manufacturer'] + ' ' + product['name']).replace('\\"', '"')
 
         matches = re.search(r'var\s+variantsAray\s+=\s+(\[.+?);', response.text, re.DOTALL)
-        if not matches: continue
-
         options = ast.literal_eval(matches.group(1))
 
-        matches = re.search(r'var\s+allVariants\s+=\s+({.+?);', response.text, re.DOTALL)
-        if not matches: continue
-
         variants = {}
+        matches = re.search(r'var\s+allVariants\s+=\s+({.+?);', response.text, re.DOTALL)
         skus = ast.literal_eval(matches.group(1))['variants']
         for sku in skus:
             skuid = sku['skuId'].replace('sku', '')
             variants[skuid] = {}
-
             varNameArray = []
             for option in options:
                 if sku[option]: varNameArray.append(sku[option])
@@ -735,9 +724,10 @@ def parseCRC(url):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = prodname
             variants[skuid]['instock'] = sku['isInStock'] == 'true'
+    except Exception:
+        return None
 
-        return variants
-    return None
+    return variants
 
 
 def parseSB(url):
