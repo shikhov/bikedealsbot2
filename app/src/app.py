@@ -957,14 +957,15 @@ async def checkSKU():
             sku = variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
                 doc['instock_prev'] = doc['instock']
-                doc['instock'] = sku['instock']
 
             price_threshold = STORES[doc['store']]['price_threshold']
             if sku['currency'] == doc['currency']:
                 if doc['price']*price_threshold < abs(sku['price'] - doc['price']):
                     doc['price_prev'] = doc['price']
-                    doc['price'] = sku['price']
 
+            doc['instock'] = sku['instock']
+            doc['currency'] = sku['currency']
+            doc['price'] = sku['price']
             doc['errors'] = 0
             doc['lastgoodts'] = int(time())
         else:
