@@ -693,7 +693,7 @@ def parseCRC(url):
         'Cookie': 'countryCode=KZ; languageCode=en; currencyCode=USD'
     }
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT, verify=False)
 
         matches = re.search(r'"priceCurrency":\s+"(.+?)",', response.text, re.DOTALL)
         currency = matches.group(1)
