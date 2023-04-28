@@ -180,13 +180,13 @@ async def processBC(message: types.Message):
         await showVariants(store='BC', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
-@dp.message_handler(regexp=r'(https?://www\.chainreactioncycles\.com/\S+/rp-prod(\d+))', chat_type='private')
+@dp.message_handler(regexp=r'(https://www\.chainreactioncycles\.com/\S+)', chat_type='private')
 async def processCRC(message: types.Message):
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https?://www\.chainreactioncycles\.com/\S+/rp-prod(\d+))', message.text)
+    rg = re.search(r'(https://www\.chainreactioncycles\.com/\S+)', message.text)
     if rg:
-        url = 'https://www.chainreactioncycles.com/en/rp-prod' + rg.group(2)
+        url = rg.group(1)
         await showVariants(store='CRC', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
@@ -689,41 +689,57 @@ def parseBC(url):
 
 
 def parseCRC(url):
+    def getVarName(variant):
+        i = 1
+        tmp = []
+        attrs = {x['name']: x for x in variant['attributes']}
+        while True:
+            key = 'variantAttribute' + str(i)
+            if not attrs.get(key): break
+            varAtt = attrs.get(key)['value']
+            if varAtt != 'n/a':
+                varAttValue = attrs[varAtt]['value']
+                if type(varAttValue) == dict:
+                    tmp.append(varAttValue['label'])
+                else:
+                    tmp.append(varAttValue)
+            i += 1
+        return ', '.join(tmp)
+
     headers = {
         'Cookie': 'countryCode=KZ; languageCode=en; currencyCode=USD'
     }
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT, verify=False)
+        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
+        url = response.url
 
-        matches = re.search(r'"priceCurrency":\s+"(.+?)",', response.text, re.DOTALL)
-        currency = matches.group(1)
+        matches = re.search(r'type="application/json">(.+)</script>', response.text, re.DOTALL)
+        jsdata = json.loads(matches.group(1))
+        urlinfo = jsdata['props']['pageProps']['renderGraph']['urlInfo']
+        if urlinfo['hreflang'] == 'en':
+            url = urlinfo['canonical']
+        else:
+            alturls = {x['hreflang']: x for x in urlinfo['alternate']}
+            url = alturls['en']['href']
+            response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
+            matches = re.search(r'type="application/json">(.+)</script>', response.text, re.DOTALL)
+            jsdata = json.loads(matches.group(1))
 
-        matches = re.search(r'window\.universal_variable\s+=\s+(.+?)</script>', response.text, re.DOTALL)
-        universal = ast.literal_eval(matches.group(1))
-        product = universal['product']
-        prodid = product['id'].replace('prod', '')
-        prodname = (product['manufacturer'] + ' ' + product['name']).replace('\\"', '"')
-
-        matches = re.search(r'var\s+variantsAray\s+=\s+(\[.+?);', response.text, re.DOTALL)
-        options = ast.literal_eval(matches.group(1))
+        jsbody = jsdata['props']['pageProps']['renderGraph']['page']['components']['body'][0]
+        jsvariants = jsbody['variants']
 
         variants = {}
-        matches = re.search(r'var\s+allVariants\s+=\s+({.+?);', response.text, re.DOTALL)
-        skus = ast.literal_eval(matches.group(1))['variants']
-        for sku in skus:
-            skuid = sku['skuId'].replace('sku', '')
+        for variant in jsvariants:
+            skuid = str(crc16.new((variant['sku']).encode('utf-8')).crcValue)
             variants[skuid] = {}
-            varNameArray = []
-            for option in options:
-                if sku[option]: varNameArray.append(sku[option])
-            variants[skuid]['variant'] = ', '.join(varNameArray)
-            variants[skuid]['prodid'] = prodid
-            variants[skuid]['price'] = int(re.sub(r'^\D*(\d+).*', r'\1', sku['RP']))
-            variants[skuid]['currency'] = currency
+            variants[skuid]['variant'] = getVarName(variant)
+            variants[skuid]['prodid'] = jsbody['key']
+            variants[skuid]['price'] = int(variant['price']['current']['centAmount']/100)
+            variants[skuid]['currency'] = variant['price']['current']['currencyCode']
             variants[skuid]['store'] = 'CRC'
             variants[skuid]['url'] = url
-            variants[skuid]['name'] = prodname
-            variants[skuid]['instock'] = sku['isInStock'] == 'true'
+            variants[skuid]['name'] = jsbody['name']
+            variants[skuid]['instock'] = variant['stockLevel']['inStock']
     except Exception:
         return None
 
