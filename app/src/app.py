@@ -163,6 +163,52 @@ async def processCmdBroadcast(message: types.Message):
     await message.answer('🔴 Окончание рассылки')
 
 
+@dp.message_handler(regexp_commands=[r'^/bc_\w+'], chat_id=ADMINCHATID)
+async def processCmdBroadcastByStore(message: types.Message):
+    await message.answer('🟢 Начало рассылки')
+    text = message.get_args()
+    msg_hash = md5(text.encode('utf-8')).hexdigest()
+    params = message.get_command().split('_')
+    store = params[1].upper()
+    count = 0
+
+    db = MongoClient(CONNSTRING).get_database(DBNAME)
+    docs = db.users.aggregate([
+        {
+            '$lookup':
+            {
+                'from': 'sku',
+                'localField': '_id',
+                'foreignField': 'chat_id',
+                'as': 'matched_skus'
+            }
+        },
+        {
+            '$match':
+            {
+                'matched_skus.store': store,
+                'enable': True
+            }
+        }
+    ])
+    for doc in docs:
+        count += 1
+        if count % 100 == 0:
+            await message.answer('Обработано: ' + str(count))
+
+        await asyncio.sleep(0.1)
+        if 'broadcasts' not in doc: doc['broadcasts'] = []
+        if msg_hash in doc['broadcasts']: continue
+
+        try:
+            await bot.send_message(chat_id=doc['_id'], text=text)
+            doc['broadcasts'].append(msg_hash)
+            db.users.update_one({'_id': doc['_id']}, {'$set': doc})
+        except (exceptions.BotBlocked, exceptions.UserDeactivated):
+            disableUser(doc['_id'])
+
+    await message.answer('🔴 Окончание рассылки')
+
 
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
 async def processCmdReload(message: types.Message):
