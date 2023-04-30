@@ -1,4 +1,3 @@
-import ast
 import asyncio
 import json
 import logging
@@ -713,20 +712,20 @@ def parseBC(url):
 
         matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
         variants = {}
-        json = ast.literal_eval(matches.group(1))
-        skus = json['offers']
+        jsdata = json.loads(matches.group(1))
+        skus = jsdata['offers']
         for sku in skus:
-            skuid = sku['sku'].replace(str(json['sku']), '').replace('-', '')
+            skuid = sku['sku'].replace(str(jsdata['sku']), '').replace('-', '')
             variants[skuid] = {}
             variants[skuid]['variant'] = sku['name'].replace('\/', '/')
-            variants[skuid]['prodid'] = str(json['sku'])
+            variants[skuid]['prodid'] = str(jsdata['sku'])
             variants[skuid]['price'] = int(sku['priceSpecification']['price'])
             if 'True' in sku['priceSpecification']['valueAddedTaxIncluded']:
                 variants[skuid]['price'] = int(sku['priceSpecification']['price']*0.84)
             variants[skuid]['currency'] = sku['priceSpecification']['priceCurrency']
             variants[skuid]['store'] = 'BC'
             variants[skuid]['url'] = url
-            variants[skuid]['name'] = (json['brand']['name'] + ' ' + json['name'].replace('\/', '/'))
+            variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
             variants[skuid]['instock'] = 'InStock' in sku['availability']
     except Exception:
         return None
