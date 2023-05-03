@@ -2,12 +2,11 @@ import asyncio
 import json
 import logging
 import re
-import zlib
 from hashlib import md5
 from datetime import datetime
 from time import time
 import urllib.parse
-import requests
+from aiohttp import ClientSession, ClientTimeout
 from curl_cffi import requests as curl
 import crcmod.predefined
 
@@ -77,6 +76,7 @@ class LoggingMiddleware(BaseMiddleware):
 
 
 crc16 = crcmod.predefined.Crc('crc-16')
+crc32 = crcmod.predefined.Crc('crc-32')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -225,13 +225,13 @@ async def processBC(message: types.Message):
         await showVariants(store='BC', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
-@dp.message_handler(regexp=r'(https://www\.chainreactioncycles\.com/\S+)', chat_type='private')
+@dp.message_handler(regexp=r'https://www\.chainreactioncycles\.com/(\S+/)?p/', chat_type='private')
 async def processCRC(message: types.Message):
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https://www\.chainreactioncycles\.com/\S+)', message.text)
+    rg = re.search(r'(https://www\.chainreactioncycles\.com/)(\S+/)?(p/[^?&\s]+)', message.text)
     if rg:
-        url = rg.group(1)
+        url = rg.group(1) + 'int/' + rg.group(3)
         await showVariants(store='CRC', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
@@ -415,7 +415,7 @@ async def showVariants(store, url, chat_id, message_id):
     msg = await bot.send_message(chat_id, '🔎 Ищу информацию о товаре...', reply_to_message_id=message_id)
 
     text_array = []
-    variants = getVariants(store, url)
+    variants = await getVariants(store, url)
     if variants:
         first_skuid = list(variants)[0]
         if len(variants) == 1:
@@ -451,7 +451,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
-    variants = getVariants(store, url)
+    variants = await getVariants(store, url)
     if not variants or skuid not in variants:
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
@@ -518,7 +518,7 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
     if msg: await sendOrEditMsg()
 
 
-def getVariants(store, url):
+async def getVariants(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
@@ -526,7 +526,7 @@ def getVariants(store, url):
     if doc:
         return doc['variants']
 
-    variants = globals()['parse' + store](url)
+    variants = await globals()['parse' + store](url)
     if variants:
         cacheVariants(variants)
     return variants
@@ -563,7 +563,7 @@ async def removeInvalidSKU():
         await asyncio.sleep(0.1)
 
 
-def parseB24(url):
+async def parseB24(url):
     try:
         content = curl.get(url, impersonate='chrome110', timeout=HTTPTIMEOUT).text
 
@@ -649,20 +649,23 @@ def parseB24(url):
     return variants
 
 
-def parseBD(url):
+async def parseBD(url):
     headers = {
         'User-Agent': 'Mozilla/5.0'
     }
+    timeout = ClientTimeout(total=HTTPTIMEOUT)
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
-        url = response.url
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
 
-        matches = re.search(r'dataLayer = \[(.+?)\]', response.text, re.DOTALL)
+        matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
         jsdata = json.loads(matches.group(1))
         prodid = str(jsdata['productID'])
         currency = jsdata['productCurrency']
 
-        matches = re.search(r'dataLayer.push \((.+?)\);', response.text, re.DOTALL)
+        matches = re.search(r'dataLayer.push \((.+?)\);', content, re.DOTALL)
         jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
         name = jsdata['brand'] + ' ' + jsdata['name']
         price = jsdata['price']
@@ -671,7 +674,7 @@ def parseBD(url):
             return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
 
         variants = {}
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(content, 'lxml')
         res = soup.find_all(findVariants)
         if res:
             for x in res:
@@ -686,9 +689,8 @@ def parseBD(url):
                 variants[skuid]['name'] = name
                 variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
         else:
-            matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', response.text, re.DOTALL)
+            matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', content, re.DOTALL)
             instock = (matches.group(1) == 'InStock')
-
             variants['0'] = {}
             variants['0']['variant'] = ''
             variants['0']['prodid'] = prodid
@@ -704,13 +706,16 @@ def parseBD(url):
     return variants
 
 
-def parseBC(url):
+async def parseBC(url):
     headers = {}
+    timeout = ClientTimeout(total=HTTPTIMEOUT)
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
-        url = response.url
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
 
-        matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', response.text, re.DOTALL)
+        matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', content, re.DOTALL)
         variants = {}
         jsdata = json.loads(matches.group(1))
         skus = jsdata['offers']
@@ -733,7 +738,7 @@ def parseBC(url):
     return variants
 
 
-def parseCRC(url):
+async def parseCRC(url):
     def getVarName(variant):
         i = 1
         tmp = []
@@ -754,22 +759,15 @@ def parseCRC(url):
     headers = {
         'Cookie': 'countryCode=KZ; languageCode=en; currencyCode=USD'
     }
+    timeout = ClientTimeout(total=HTTPTIMEOUT)
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
-        url = response.url
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
 
-        matches = re.search(r'type="application/json">(.+)</script>', response.text, re.DOTALL)
+        matches = re.search(r'type="application/json">(.+)</script>', content, re.DOTALL)
         jsdata = json.loads(matches.group(1))
-        urlinfo = jsdata['props']['pageProps']['renderGraph']['urlInfo']
-        if urlinfo['hreflang'] == 'en':
-            url = urlinfo['canonical']
-        else:
-            alturls = {x['hreflang']: x for x in urlinfo['alternate']}
-            url = alturls['en']['href']
-            response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
-            matches = re.search(r'type="application/json">(.+)</script>', response.text, re.DOTALL)
-            jsdata = json.loads(matches.group(1))
-
         jsbody = jsdata['props']['pageProps']['renderGraph']['page']['components']['body'][0]
         jsvariants = jsbody['variants']
 
@@ -791,16 +789,19 @@ def parseCRC(url):
     return variants
 
 
-def parseSB(url):
+async def parseSB(url):
     headers = {
         'Cookie': 'country=KZ; currency_relaunch=EUR; vat=hide'
     }
+    timeout = ClientTimeout(total=HTTPTIMEOUT)
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
 
         skus = None
         name = None
-        matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', response.text, re.DOTALL)
+        matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', content, re.DOTALL)
         jsdata = json.loads(matches.group(1))
         for x in jsdata:
             skus = x.get('offers')
@@ -809,8 +810,7 @@ def parseSB(url):
         if not skus: return None
         if not name: return None
 
-        prodid = str(zlib.crc32(url.encode('utf-8')))
-
+        prodid = str(crc32.new(url.encode('utf-8')).crcValue)
         variants = {}
         for sku in skus:
             skuid = sku['sku']
@@ -832,20 +832,23 @@ def parseSB(url):
     return variants
 
 
-def parseTI(url):
+async def parseTI(url):
     headers = {
         'Cookie': 'id_pais=164'
     }
+    timeout = ClientTimeout(total=HTTPTIMEOUT)
     url = url.replace(chr(160), '')
     url = urllib.parse.quote(url, safe=':/')
     try:
-        response = requests.get(url, headers=headers, timeout=HTTPTIMEOUT)
-        url = response.url
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
 
         matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
         prodid = matches.group(1)
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(content, 'lxml')
         res = soup.find_all('h1', {'class': 'productName'})
         name = res[0].string
 
@@ -1003,7 +1006,6 @@ async def checkSKU():
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
     for doc in db.sku.find(query):
-        await asyncio.sleep(0.1)
         if not db.sku.find_one({'_id': doc['_id']}): continue
 
         # increase check interval for inactive SKU
@@ -1013,7 +1015,7 @@ async def checkSKU():
 
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']...')
 
-        variants = getVariants(doc['store'], doc['url'])
+        variants = await getVariants(doc['store'], doc['url'])
         if variants and doc['skuid'] in variants:
             sku = variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
@@ -1035,6 +1037,7 @@ async def checkSKU():
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
         db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
+        await asyncio.sleep(1)
 
 
 async def errorsMonitor():
