@@ -24,7 +24,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT
+    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY
 
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
@@ -47,6 +47,7 @@ def loadSettings():
     STORES = settings['STORES']
     DEBUG = settings['DEBUG']
     HTTPTIMEOUT = settings['HTTPTIMEOUT']
+    REQUESTDELAY = settings['REQUESTDELAY']
 
 
 class LoggingMiddleware(BaseMiddleware):
@@ -958,7 +959,6 @@ async def notify():
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     for doc in db.sku.find(query):
-        await asyncio.sleep(0.1)
         if not db.sku.find_one({'_id': doc['_id']}): continue
         skustring = getSkuString(doc, ['store', 'url', 'price'])
 
@@ -1039,7 +1039,7 @@ async def checkSKU():
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
         db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
-        await asyncio.sleep(1)
+        await asyncio.sleep(REQUESTDELAY)
 
 
 async def errorsMonitor():
