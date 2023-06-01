@@ -889,7 +889,7 @@ async def parseTI(url):
 
             if not (skuid and price and instock and currency): continue
             if skuid not in varnames: continue
-            if price == '0': return None
+            if price == '0': continue
 
             variants[skuid] = {}
             variants[skuid]['variant'] = varnames[skuid]
