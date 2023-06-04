@@ -976,9 +976,8 @@ async def notify():
                     percents = int((1 - doc['price']/float(doc['price_prev']))*100)
                     if percents >= BESTDEALSMINPERCENTAGE:
                         bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
-                        if bdkey not in bestdeals:
-                            bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
-                            if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
+                        bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
+                        if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
             if doc['price'] > doc['price_prev']:
                 addMsg('📈 Повышение цены\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
 
