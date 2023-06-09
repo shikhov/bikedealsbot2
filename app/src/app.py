@@ -21,7 +21,7 @@ from pymongo import MongoClient
 from config import CONNSTRING, DBNAME
 
 def loadSettings():
-    global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE
+    global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
     global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY
@@ -34,6 +34,7 @@ def loadSettings():
     BESTDEALSCHATID = settings['BESTDEALSCHATID']
     BESTDEALSMINPERCENTAGE = settings['BESTDEALSMINPERCENTAGE']
     BESTDEALSWARNPERCENTAGE = settings['BESTDEALSWARNPERCENTAGE']
+    BESTDEALSMINVALUE = settings['BESTDEALSMINVALUE']
     CACHELIFETIME = settings['CACHELIFETIME']
     ERRORMINTHRESHOLD = settings['ERRORMINTHRESHOLD']
     ERRORMAXDAYS = settings['ERRORMAXDAYS']
@@ -974,7 +975,9 @@ async def notify():
                 addMsg('📉 Снижение цены!\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
                 if doc['price_prev'] != 0:
                     percents = int((1 - doc['price']/float(doc['price_prev']))*100)
-                    if percents >= BESTDEALSMINPERCENTAGE:
+                    value = doc['price_prev'] - doc['price']
+                    minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
+                    if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
                         bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
                         bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
                         if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
