@@ -955,6 +955,16 @@ async def notify():
         else:
             msgs[doc['chat_id']] = [msg]
 
+    def processBestDeals():
+        if doc['price_prev'] == 0: return
+        percents = int((1 - doc['price']/float(doc['price_prev']))*100)
+        value = doc['price_prev'] - doc['price']
+        minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
+        if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
+            bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
+            bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
+            if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
+
     msgs = {}
     bestdeals = {}
 
@@ -973,14 +983,7 @@ async def notify():
         if not doc['price_prev'] is None and doc['instock']:
             if doc['price'] < doc['price_prev']:
                 addMsg('📉 Снижение цены!\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
-                if doc['price_prev'] != 0:
-                    percents = int((1 - doc['price']/float(doc['price_prev']))*100)
-                    value = doc['price_prev'] - doc['price']
-                    minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
-                    if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
-                        bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
-                        bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
-                        if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
+                processBestDeals()
             if doc['price'] > doc['price_prev']:
                 addMsg('📈 Повышение цены\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
 
