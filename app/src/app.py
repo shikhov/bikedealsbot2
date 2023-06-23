@@ -665,6 +665,8 @@ async def parseBD(url):
                 url = str(response.url)
 
         matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
+        if not matches:
+            matches = re.search(r'dataLayer.push\((.+?)\);', content, re.DOTALL)
         jsdata = json.loads(matches.group(1))
         prodid = str(jsdata['productID'])
         currency = jsdata['productCurrency']
