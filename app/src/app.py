@@ -257,13 +257,13 @@ async def processTI(message: types.Message):
         await showVariants(store='TI', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
-@dp.message_handler(regexp=r'(https://www\.bike24\.com/p2(\d+)\.html)', chat_type='private')
+@dp.message_handler(regexp=r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', chat_type='private')
 async def processB24(message: types.Message):
     chat_id = str(message.from_user.id)
 
-    rg = re.search(r'(https://www\.bike24\.com/p2(\d+)\.html)', message.text)
+    rg = re.search(r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', message.text)
     if rg:
-        url = rg.group(1)
+        url = 'https://www.bike24.com/p2' + rg.group(3) + '.html'
         await showVariants(store='B24', url=url, chat_id=chat_id, message_id=message.message_id)
 
 
