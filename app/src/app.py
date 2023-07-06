@@ -214,7 +214,7 @@ async def processCmdBroadcastByStore(message: types.Message):
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
 async def processCmdReload(message: types.Message):
     loadSettings()
-    await message.answer('Settings sucessfully reloaded')
+    await message.answer('Settings successfully reloaded')
 
 
 @dp.message_handler(regexp=r'(https://www\.bike-components\.de/\S+p(\d+)\/)', chat_type='private')
