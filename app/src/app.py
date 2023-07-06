@@ -206,9 +206,7 @@ async def processCmdBroadcastByStore(message: types.Message):
             doc['broadcasts'].append(msg_hash)
             db.users.update_one({'_id': doc['_id']}, {'$set': doc})
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
-            disableUser(doc['_id'])
-
-    await message.answer('🔴 Окончание рассылки')
+            disableUser(doc['_id'])await message.answer('🔴 Окончание рассылки')
 
 
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
