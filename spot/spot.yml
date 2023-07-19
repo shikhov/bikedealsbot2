@@ -1,0 +1,18 @@
+ssh_key: /home/user44/id_rsa
+inventory: inventory/inventory.yml
+
+targets: ["default"]
+
+task:
+    - name: Sync src folder
+      sync: {src: "../app", dst: "$appname$target", delete: true}
+
+    - name: Copy config
+      copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
+
+    - name: Docker build and start
+      script: |
+        docker build $appname$target -t $appname$target-image
+        docker stop $appname$target || true
+        docker rm $appname$target || true
+        docker run -d --name $appname$target --restart=on-failure $appname$target-image

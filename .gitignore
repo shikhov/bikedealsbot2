@@ -1,5 +1,6 @@
 .vscode
 ansible/inventory/
+spot/inventory/
 config/
 __pycache__
 .idea
