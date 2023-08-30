@@ -746,20 +746,17 @@ async def parseBC(url):
 
 async def parseCRC(url):
     def getVarName(variant):
-        i = 1
         tmp = []
         attrs = {x['name']: x for x in variant['attributes']}
-        while True:
-            key = 'variantAttribute' + str(i)
-            if not attrs.get(key): break
-            varAtt = attrs.get(key)['value']
-            if varAtt != 'n/a':
-                varAttValue = attrs[varAtt]['value']
-                if type(varAttValue) == dict:
-                    tmp.append(varAttValue['label'])
-                else:
-                    tmp.append(varAttValue)
-            i += 1
+        for filterableAttribute in jsbody['filterableAttributes']:
+            key = filterableAttribute['name']
+            if not attrs.get(key): continue
+            varAttValue = attrs.get(key)['value']
+            if type(varAttValue) == dict:
+                tmp.append(varAttValue['label'])
+            else:
+                tmp.append(varAttValue)
+
         return ', '.join(tmp)
 
     headers = {
