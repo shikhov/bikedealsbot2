@@ -1036,6 +1036,7 @@ async def checkSKU():
             doc['instock'] = sku['instock']
             doc['currency'] = sku['currency']
             doc['price'] = sku['price']
+            doc['variant'] = sku['variant']
             doc['errors'] = 0
             doc['lastgoodts'] = int(time())
         else:
