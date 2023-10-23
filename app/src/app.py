@@ -356,6 +356,9 @@ async def processCmdStat(message: types.Message):
             '$match': { 'sku_count': { '$ne': 0 } }
         },
         {
+            '$match': { 'enable': True }
+        },
+        {
             '$count': 'count'
         }
     ])
@@ -365,7 +368,7 @@ async def processCmdStat(message: types.Message):
     msg = ''
     msg += '<b>Total users:</b> ' + str(usersall) + '\n'
     msg += '<b>Enabled users:</b> ' + str(usersactive) + '\n'
-    msg += '<b>Users with SKU:</b> ' + str(userswsku) + '\n'
+    msg += '<b>Enabled users with SKU:</b> ' + str(userswsku) + '\n'
     msg += '<b>Total SKU:</b> ' + str(skuall) + '\n'
     msg += '<b>Active SKU:</b> ' + str(skuactive) + '\n'
 
