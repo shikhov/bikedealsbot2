@@ -101,21 +101,12 @@ async def logMessage(message):
     await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
 
 
-def getStoreUrls(activeonly):
+def getStoreUrls():
     arr = []
     for key in STORES:
-        if (activeonly and STORES[key]['active']) or not activeonly:
-            arr.append(STORES[key]['url'])
+        status = '' if STORES[key]['active'] else ' <i>(временно недоступен)</i>'
+        arr.append(STORES[key]['url'] + status)
     return arr
-
-
-def getStoreKeys(activeonly):
-    arr = []
-    for key in STORES:
-        if (activeonly and STORES[key]['active']) or not activeonly:
-            arr.append(key)
-    return arr
-
 
 
 @dp.message_handler(commands='start', chat_type='private')
@@ -219,62 +210,80 @@ async def processCmdReload(message: types.Message):
 
 @dp.message_handler(regexp=r'(https://www\.bike-components\.de/\S+p(\d+)\/)', chat_type='private')
 async def processBC(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'BC'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'(https://www\.bike-components\.de/)(.+?)(/\S+p(\d+)\/)', message.text)
     if rg:
         url = rg.group(1) + 'en' + rg.group(3)
-        await showVariants(store='BC', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp=r'https://www\.chainreactioncycles\.com/(\S+/)?p/', chat_type='private')
 async def processCRC(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'CRC'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'(https://www\.chainreactioncycles\.com/)(\S+/)?(p/[^?&\s]+)', message.text)
     if rg:
         url = rg.group(1) + 'int/' + rg.group(3)
-        await showVariants(store='CRC', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+/)', chat_type='private')
 async def processSB(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'SB'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'(https://www\.starbike\.com/en/\S+)', message.text)
     if rg:
         url = rg.group(1)
-        await showVariants(store='SB', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp=r'(https://www\.tradeinn\.com/\S+/\d+/p)', chat_type='private')
 async def processTI(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'TI'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'(https://www\.tradeinn\.com/.+?/)(.+?)(/\S+/\d+/p)', message.text)
     if rg:
         url = rg.group(1) + 'en' + rg.group(3)
-        await showVariants(store='TI', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', chat_type='private')
 async def processB24(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'B24'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', message.text)
     if rg:
         url = 'https://www.bike24.com/p2' + rg.group(3) + '.html'
-        await showVariants(store='B24', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
 async def processBD(message: types.Message):
-    chat_id = str(message.from_user.id)
+    store = 'BD'
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
 
     rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', message.text)
     if rg:
         url = 'https://www.bike-discount.de/en/' + rg.group(1)
-        await showVariants(store='BD', url=url, chat_id=chat_id, message_id=message.message_id)
+        await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
 @dp.message_handler(regexp_commands=[r'^/add_\w+_\w+_\w+$'], chat_type='private')
@@ -372,7 +381,7 @@ async def processCmdStat(message: types.Message):
     msg += '<b>Total SKU:</b> ' + str(skuall) + '\n'
     msg += '<b>Active SKU:</b> ' + str(skuactive) + '\n'
 
-    for key in getStoreKeys(activeonly=False):
+    for key in STORES.keys():
         num = db.sku.count_documents({'store': key})
         msg += '<b>' + key + ':</b> ' + str(num) + '\n'
 
@@ -499,7 +508,7 @@ def getURL(store, prodid):
 
 
 def substituteVars(text):
-    text = text.replace('%ACTIVESTOREURLS%', '\n'.join(getStoreUrls(activeonly=True)))
+    text = text.replace('%STOREURLS%', '\n'.join(getStoreUrls()))
     return text
 
 
@@ -929,6 +938,7 @@ def getSkuString(sku, options):
     if 'icon' in options:
         icon = '✅ ' if instock else '🚫 '
         if errors > ERRORMINTHRESHOLD: icon = '⚠️ '
+        if not STORES[store]['active']: icon = '⏳ '
     if 'store' in options:
         storename = '<code>[' + store + ']</code> '
     if 'price' in options:
@@ -1016,6 +1026,7 @@ async def checkSKU():
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
     for doc in db.sku.find(query):
+        if not STORES[doc['store']]['active']: continue
         if not db.sku.find_one({'_id': doc['_id']}): continue
 
         # increase check interval for inactive SKU
