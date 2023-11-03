@@ -764,7 +764,7 @@ async def parseCRC(url):
             key = filterableAttribute['name']
             if not attrs.get(key): continue
             varAttValue = attrs.get(key)['value']
-            if type(varAttValue) == dict:
+            if isinstance(varAttValue, dict):
                 tmp.append(varAttValue['label'])
             else:
                 tmp.append(varAttValue)
@@ -986,13 +986,13 @@ async def notify():
         if not db.sku.find_one({'_id': doc['_id']}): continue
         skustring = getSkuString(doc, ['store', 'url', 'price'])
 
-        if not doc['instock_prev'] is None:
+        if doc['instock_prev'] is not None:
             if doc['instock']:
                 addMsg('✅ Снова в наличии!\n' + skustring)
             if not doc['instock']:
                 addMsg('🚫 Не в наличии\n' + skustring)
 
-        if not doc['price_prev'] is None and doc['instock']:
+        if doc['price_prev'] is not None and doc['instock']:
             if doc['price'] < doc['price_prev']:
                 addMsg('📉 Снижение цены!\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
                 processBestDeals()
@@ -1070,8 +1070,8 @@ async def errorsMonitor():
     for doc in db.sku.find(query):
         store = doc['store']
         errors = doc['errors']
-        if not store in good: good[store] = 0
-        if not store in bad: bad[store] = 0
+        if store not in good: good[store] = 0
+        if store not in bad: bad[store] = 0
         if errors == 0:
             good[store] += 1
         else:
