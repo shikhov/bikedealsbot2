@@ -142,7 +142,8 @@ async def processCmdBroadcast(message: types.Message):
             await message.answer('Обработано: ' + str(count))
 
         await asyncio.sleep(0.1)
-        if 'broadcasts' not in doc: doc['broadcasts'] = []
+        if 'broadcasts' not in doc:
+            doc['broadcasts'] = []
         if msg_hash in doc['broadcasts']: continue
 
         try:
@@ -189,7 +190,8 @@ async def processCmdBroadcastByStore(message: types.Message):
             await message.answer('Обработано: ' + str(count))
 
         await asyncio.sleep(0.1)
-        if 'broadcasts' not in doc: doc['broadcasts'] = []
+        if 'broadcasts' not in doc:
+            doc['broadcasts'] = []
         if msg_hash in doc['broadcasts']: continue
 
         try:
@@ -493,9 +495,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
     }
     db.sku.insert_one(data)
 
-    dispname = sku['variant']
-    if not dispname: dispname = sku['name']
-
+    dispname = sku['variant'] if sku['variant'] else sku['name']
     await sendOrEditMsg(dispname + '\n✔️ Добавлено к отслеживанию', chat_id, message_id, msgtype)
 
 
@@ -529,7 +529,8 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
             first_page = False
         msg += paragraph + delimiter
 
-    if msg: await sendOrEditMsg()
+    if msg:
+        await sendOrEditMsg()
 
 
 async def getVariants(store, url):
@@ -648,7 +649,8 @@ async def parseB24(url):
                         variants[skuid]['store'] = 'B24'
                         variants[skuid]['url'] = url
                         variants[skuid]['name'] = name
-            if len(jsdata['productOptionList']) > 2: return None # there are no examples yet
+            if len(jsdata['productOptionList']) > 2:
+                return None # there are no examples yet
         else:
             variants['0'] = {}
             variants['0']['variant'] = variant
@@ -821,7 +823,8 @@ async def parseSB(url):
         for x in jsdata:
             skus = x.get('offers')
             name = x.get('name')
-            if skus and name: break
+            if skus and name:
+                break
         if not skus: return None
         if not name: return None
 
@@ -834,7 +837,8 @@ async def parseSB(url):
             variants[skuid]['variant'] = sku['name'].replace(name, '').strip()
             variants[skuid]['prodid'] = prodid
             tmp = sku['price'].split('.')
-            if len(tmp) == 3: sku['price'] = tmp[0] + tmp[1]
+            if len(tmp) == 3:
+                sku['price'] = tmp[0] + tmp[1]
             variants[skuid]['price'] = int(float(sku['price']))
             variants[skuid]['currency'] = sku['priceCurrency']
             variants[skuid]['store'] = 'SB'
@@ -975,7 +979,8 @@ async def notify():
         if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
             bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
             bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
-            if percents >= BESTDEALSWARNPERCENTAGE: bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
+            if percents >= BESTDEALSWARNPERCENTAGE:
+                bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
 
     msgs = {}
     bestdeals = {}
@@ -1008,10 +1013,12 @@ async def notify():
             await paginatedTgMsg(msgs[chatid], chatid)
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
             disableUser(chatid)
-        if DEBUG and LOGCHATID: await paginatedTgMsg(msgs[chatid], LOGCHATID)
+        if DEBUG and LOGCHATID:
+            await paginatedTgMsg(msgs[chatid], LOGCHATID)
         await asyncio.sleep(0.1)
 
-    if BESTDEALSCHATID: await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
+    if BESTDEALSCHATID:
+        await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
 
 
 def disableUser(chat_id):
