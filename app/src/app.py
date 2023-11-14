@@ -735,7 +735,7 @@ async def parseBC(url):
                 content = await response.text()
                 url = str(response.url)
 
-        matches = re.search(r'({ \"@context\": \"https:\\/\\/schema\.org\", \"@type\": \"Product\".+?})</script>', content, re.DOTALL)
+        matches = re.search(r'({\"@context\":\"https:\\/\\/schema\.org\",\"@type\":\"Product\".+?})</script>', content, re.DOTALL)
         variants = {}
         jsdata = json.loads(matches.group(1))
         skus = jsdata['offers']
