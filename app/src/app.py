@@ -454,7 +454,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'chat_id': chat_id}
     if db.sku.count_documents(query) >= MAXITEMSPERUSER:
-        await sendOrEditMsg('⛔️ Увы, в данный момент добавить можно не более ' + str(MAXITEMSPERUSER) + ' позиций', chat_id, message_id, msgtype)
+        await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {MAXITEMSPERUSER} позиций', chat_id, message_id, msgtype)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
@@ -555,7 +555,7 @@ async def clearSKUCache():
 
 
 async def removeInvalidSKU():
-    banner = 'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более ' + str(ERRORMAXDAYS) + ' дней:'
+    banner = f'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более {ERRORMAXDAYS} дней:'
     tsexpired = int(time()) - ERRORMAXDAYS * 24 * 3600
     db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'lastgoodts': {'$lt': tsexpired}}
@@ -1092,7 +1092,7 @@ async def errorsMonitor():
     for store in good:
         if not STORES[store]['active']: continue
         if good[store] == 0 or bad[store]/float(good[store]) > 0.8:
-            await bot.send_message(ADMINCHATID, 'Problem with ' + store + '!\nGood: ' + str(good[store]) + '\nBad: ' + str(bad[store]))
+            await bot.send_message(ADMINCHATID, f'Problem with {store}!\nGood: {good[store]}\nBad: {bad[store]}')
 
 
 if __name__ == '__main__':
