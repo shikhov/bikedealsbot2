@@ -928,6 +928,7 @@ def getSkuString(sku, options):
     name = sku['name']
     variant = sku['variant']
     price = str(sku['price'])
+    price_prev = str(sku['price_prev'])
     currency = sku['currency']
     store = sku['store']
     errors = sku['errors'] if 'errors' in sku else 0
@@ -936,6 +937,7 @@ def getSkuString(sku, options):
     urlname = ''
     icon = ''
     pricetxt = ''
+    pricetxt_prev = ''
 
     if 'url' in options:
         urlname = '<a href="' + url + '">' + name + '</a>' + '\n'
@@ -947,8 +949,10 @@ def getSkuString(sku, options):
         storename = '<code>[' + store + ']</code> '
     if 'price' in options:
         pricetxt = ' <b>' + price + ' ' + currency + '</b>'
+    if 'price_prev' in options:
+        pricetxt_prev = ' (было: ' + price_prev + ' ' + currency + ')'
 
-    return storename + urlname + icon + (variant + pricetxt).strip()
+    return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip()
 
 
 def cacheVariants(variants):
@@ -978,7 +982,7 @@ async def notify():
         minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
         if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
             bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
-            bestdeals[bdkey] = skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ') ' + str(percents) + '%'
+            bestdeals[bdkey] = skustring + ' ' + str(percents) + '%'
             if percents >= BESTDEALSWARNPERCENTAGE:
                 bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
 
@@ -989,20 +993,21 @@ async def notify():
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     for doc in db.sku.find(query):
         if not db.sku.find_one({'_id': doc['_id']}): continue
-        skustring = getSkuString(doc, ['store', 'url', 'price'])
 
         if doc['instock_prev'] is not None:
+            skustring = getSkuString(doc, ['store', 'url', 'price'])
             if doc['instock']:
                 addMsg('✅ Снова в наличии!\n' + skustring)
             if not doc['instock']:
                 addMsg('🚫 Не в наличии\n' + skustring)
 
         if doc['price_prev'] is not None and doc['instock']:
+            skustring = getSkuString(doc, ['store', 'url', 'price', 'price_prev'])
             if doc['price'] < doc['price_prev']:
-                addMsg('📉 Снижение цены!\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
+                addMsg('📉 Снижение цены!\n' + skustring)
                 processBestDeals()
             if doc['price'] > doc['price_prev']:
-                addMsg('📈 Повышение цены\n' + skustring + ' (было: ' + str(doc['price_prev']) + ' ' + doc['currency'] + ')')
+                addMsg('📈 Повышение цены\n' + skustring)
 
         doc['price_prev'] = None
         doc['instock_prev'] = None
