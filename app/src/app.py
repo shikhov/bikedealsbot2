@@ -928,10 +928,10 @@ def getSkuString(sku, options):
     name = sku['name']
     variant = sku['variant']
     price = str(sku['price'])
-    price_prev = str(sku['price_prev'])
+    price_prev = str(sku.get('price_prev'))
     currency = sku['currency']
     store = sku['store']
-    errors = sku['errors'] if 'errors' in sku else 0
+    errors = sku.get('errors', 0)
 
     storename = ''
     urlname = ''
