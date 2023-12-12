@@ -236,14 +236,14 @@ async def processCRC(message: types.Message):
         await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
-@dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+/)', chat_type='private')
+@dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+?/)', chat_type='private')
 async def processSB(message: types.Message):
     store = 'SB'
     if not STORES[store]['active']:
         await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
         return
 
-    rg = re.search(r'(https://www\.starbike\.com/en/\S+)', message.text)
+    rg = re.search(r'(https://www\.starbike\.com/en/\S+?/)', message.text)
     if rg:
         url = rg.group(1)
         await showVariants(store, url, str(message.from_user.id), message.message_id)
@@ -815,36 +815,41 @@ async def parseSB(url):
         async with ClientSession(headers=headers, timeout=timeout) as session:
             async with session.get(url) as response:
                 content = await response.text()
+                url = str(response.url)
 
-        skus = None
-        name = None
-        matches = re.search(r'<script type=\"application/ld\+json\">(.+?)</script>', content, re.DOTALL)
-        jsdata = json.loads(matches.group(1))
-        for x in jsdata:
-            skus = x.get('offers')
-            name = x.get('name')
-            if skus and name:
-                break
-        if not skus: return None
-        if not name: return None
-
+        soup = BeautifulSoup(content, 'lxml')
         prodid = str(crc32.new(url.encode('utf-8')).crcValue)
+        name = soup.find('title').text
+
+        def findVarnames(tag):
+            return tag.name == 'a' and 'meta-id' in tag.attrs
+
+        varnames = {}
+        for x in soup.find_all(findVarnames):
+            varnames[x['meta-id']] = x.text.strip()
+
+        instock = {}
+        for x in soup.find_all('span', {'class': 'dropdownbox-eta'}):
+            instock[x['meta-id']] = False if 'uk-text-danger' in x['class'] else True
+
         variants = {}
-        for sku in skus:
-            skuid = sku['sku']
-            if skuid is None: skuid = '0'
+        for x in soup.find_all('span', {'class': 'dropdownbox-price'}):
+            if len(varnames) == 1:
+                skuid = '0'
+                variant = ''
+            else:
+                skuid = x['meta-id']
+                variant = varnames[x['meta-id']]
             variants[skuid] = {}
-            variants[skuid]['variant'] = sku['name'].replace(name, '').strip()
+            variants[skuid]['variant'] = variant
             variants[skuid]['prodid'] = prodid
-            tmp = sku['price'].split('.')
-            if len(tmp) == 3:
-                sku['price'] = tmp[0] + tmp[1]
-            variants[skuid]['price'] = int(float(sku['price']))
-            variants[skuid]['currency'] = sku['priceCurrency']
+            pricetxt = re.sub(r'[^0-9.]', '', x.text)
+            variants[skuid]['price'] = int(float(pricetxt))
+            variants[skuid]['currency'] = 'EUR'
             variants[skuid]['store'] = 'SB'
             variants[skuid]['url'] = url
             variants[skuid]['name'] = name
-            variants[skuid]['instock'] = (sku['availability'] == 'InStock')
+            variants[skuid]['instock'] = instock[x['meta-id']]
     except Exception:
         return None
 
