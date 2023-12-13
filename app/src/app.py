@@ -19,6 +19,8 @@ from pytz import timezone
 from pymongo import MongoClient
 
 from config import CONNSTRING, DBNAME
+db = MongoClient(CONNSTRING).get_database(DBNAME)
+
 
 def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
@@ -26,7 +28,6 @@ def loadSettings():
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
     global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     settings = db.settings.find_one({'_id': 'settings'})
 
     TOKEN = settings['TOKEN']
@@ -59,7 +60,6 @@ class LoggingMiddleware(BaseMiddleware):
         if message.text == '/start': return
         if message.chat.type != 'private': return
 
-        db = MongoClient(CONNSTRING).get_database(DBNAME)
         chat_id = str(message.from_user.id)
         if not db.users.find_one({'_id': chat_id}):
             await message.answer(BANNEROLDUSER)
@@ -114,7 +114,6 @@ async def processCmdStart(message: types.Message):
     msg = substituteVars(BANNERSTART)
     await message.answer(msg)
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     chat_id = str(message.from_user.id)
     data = {
         'first_name': message.from_user.first_name,
@@ -134,7 +133,6 @@ async def processCmdBroadcast(message: types.Message):
     msg_hash = md5(msg.encode('utf-8')).hexdigest()
     count = 0
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'enable': True}
     for doc in db.users.find(query):
         count += 1
@@ -165,7 +163,6 @@ async def processCmdBroadcastByStore(message: types.Message):
     store = params[1].upper()
     count = 0
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     docs = db.users.aggregate([
         {
             '$lookup':
@@ -303,7 +300,6 @@ async def processCmdDel(message: types.Message):
     chat_id = str(message.from_user.id)
     docid = chat_id + '_' + message.text.replace('/del_', '').upper()
     query = {'_id': docid}
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     if db.sku.find_one(query):
         db.sku.delete_one(query)
         await message.answer('Удалено')
@@ -325,7 +321,6 @@ async def processCmdDonate(message: types.Message):
 @dp.message_handler(commands='list', chat_type='private')
 async def processCmdList(message: types.Message):
     chat_id = str(message.from_user.id)
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'chat_id': chat_id}
     if db.sku.count_documents(query) == 0:
         await message.answer('Ваш список пуст')
@@ -344,8 +339,6 @@ async def processCmdList(message: types.Message):
 @dp.message_handler(commands='stat', chat_id=ADMINCHATID)
 async def processCmdStat(message: types.Message):
     sent_msg = await message.answer('Getting stat...')
-
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
 
     usersall = db.users.count_documents({})
     usersactive = db.users.count_documents({'enable': True})
@@ -451,7 +444,6 @@ async def showVariants(store, url, chat_id, message_id):
 
 
 async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'chat_id': chat_id}
     if db.sku.count_documents(query) >= MAXITEMSPERUSER:
         await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {MAXITEMSPERUSER} позиций', chat_id, message_id, msgtype)
@@ -500,7 +492,6 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
 
 
 def getURL(store, prodid):
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     doc = db.skucache.find_one({'_id': store + '_' + prodid})
     if doc:
         return doc['url']
@@ -535,7 +526,6 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
 
 async def getVariants(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
     doc = db.skucache.find_one(query)
     if doc:
@@ -549,7 +539,6 @@ async def getVariants(store, url):
 
 async def clearSKUCache():
     tsexpired = int(time()) - CACHELIFETIME * 60
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'timestamp': {'$lt': tsexpired}}
     db.skucache.delete_many(query)
 
@@ -557,7 +546,6 @@ async def clearSKUCache():
 async def removeInvalidSKU():
     banner = f'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более {ERRORMAXDAYS} дней:'
     tsexpired = int(time()) - ERRORMAXDAYS * 24 * 3600
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'lastgoodts': {'$lt': tsexpired}}
     msgs = {}
     for doc in db.sku.find(query):
@@ -963,7 +951,6 @@ def getSkuString(sku, options):
 def cacheVariants(variants):
     first_sku = variants[list(variants)[0]]
     docid = first_sku['store'] + '_' + first_sku['prodid']
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     data = {
         'variants': variants,
         'timestamp': int(time()),
@@ -994,7 +981,6 @@ async def notify():
     msgs = {}
     bestdeals = {}
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     for doc in db.sku.find(query):
         if not db.sku.find_one({'_id': doc['_id']}): continue
@@ -1032,7 +1018,6 @@ async def notify():
 
 
 def disableUser(chat_id):
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
     db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
 
@@ -1040,7 +1025,6 @@ def disableUser(chat_id):
 async def checkSKU():
     now = int(time())
 
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
     for doc in db.sku.find(query):
         if not STORES[doc['store']]['active']: continue
@@ -1082,7 +1066,6 @@ async def checkSKU():
 async def errorsMonitor():
     bad = {}
     good = {}
-    db = MongoClient(CONNSTRING).get_database(DBNAME)
     query = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
     for doc in db.sku.find(query):
         store = doc['store']
