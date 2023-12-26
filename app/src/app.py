@@ -547,22 +547,20 @@ async def removeInvalidSKU():
     banner = f'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более {ERRORMAXDAYS} дней:'
     tsexpired = int(time()) - ERRORMAXDAYS * 24 * 3600
     query = {'lastgoodts': {'$lt': tsexpired}}
-    msgs = {}
+    messages = {}
     for doc in db.sku.find(query):
         user = db.users.find_one({'_id': doc['chat_id']})
         if not user['enable']: continue
         skustring = getSkuString(doc, ['store', 'url'])
-        if doc['chat_id'] not in msgs:
-            msgs[doc['chat_id']] = [banner]
-        msgs[doc['chat_id']].append(skustring)
+        messages.setdefault(doc['chat_id'], [banner]).append(skustring)
 
     db.sku.delete_many(query)
 
-    for chatid in msgs:
+    for chat_id in messages:
         try:
-            await paginatedTgMsg(msgs[chatid], chatid)
+            await paginatedTgMsg(messages[chat_id], chat_id)
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
-            disableUser(chatid)
+            disableUser(chat_id)
         await asyncio.sleep(0.1)
 
 
@@ -962,10 +960,7 @@ def cacheVariants(variants):
 
 async def notify():
     def addMsg(msg):
-        if doc['chat_id'] in msgs:
-            msgs[doc['chat_id']].append(msg)
-        else:
-            msgs[doc['chat_id']] = [msg]
+        messages.setdefault(doc['chat_id'], []).append(msg)
 
     def processBestDeals():
         if doc['price_prev'] == 0: return
@@ -978,7 +973,7 @@ async def notify():
             if percents >= BESTDEALSWARNPERCENTAGE:
                 bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
 
-    msgs = {}
+    messages = {}
     bestdeals = {}
     bulk_request = []
 
@@ -1008,13 +1003,13 @@ async def notify():
             )
         )
 
-    for chatid in msgs:
+    for chat_id in messages:
         try:
-            await paginatedTgMsg(msgs[chatid], chatid)
+            await paginatedTgMsg(messages[chat_id], chat_id)
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
-            disableUser(chatid)
+            disableUser(chat_id)
         if DEBUG and LOGCHATID:
-            await paginatedTgMsg(msgs[chatid], LOGCHATID)
+            await paginatedTgMsg(messages[chat_id], LOGCHATID)
         await asyncio.sleep(0.1)
 
     if BESTDEALSCHATID:
