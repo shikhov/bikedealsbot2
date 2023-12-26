@@ -16,7 +16,7 @@ from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils import exceptions
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 
 from config import CONNSTRING, DBNAME
 db = MongoClient(CONNSTRING).get_database(DBNAME)
@@ -980,6 +980,7 @@ async def notify():
 
     msgs = {}
     bestdeals = {}
+    bulk_request = []
 
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     for doc in db.sku.find(query):
@@ -1000,9 +1001,12 @@ async def notify():
             if doc['price'] > doc['price_prev']:
                 addMsg('📈 Повышение цены\n' + skustring)
 
-        doc['price_prev'] = None
-        doc['instock_prev'] = None
-        db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
+        bulk_request.append(
+            UpdateOne(
+                { '_id': doc['_id'] },
+                { '$set': {'price_prev': None, 'instock_prev': None} }
+            )
+        )
 
     for chatid in msgs:
         try:
@@ -1015,6 +1019,8 @@ async def notify():
 
     if BESTDEALSCHATID:
         await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
+
+    db.sku.bulk_write(bulk_request)
 
 
 def disableUser(chat_id):
