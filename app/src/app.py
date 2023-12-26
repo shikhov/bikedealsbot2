@@ -1015,7 +1015,8 @@ async def notify():
     if BESTDEALSCHATID:
         await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
 
-    db.sku.bulk_write(bulk_request)
+    if bulk_request:
+        db.sku.bulk_write(bulk_request)
 
 
 def disableUser(chat_id):
