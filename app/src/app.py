@@ -5,6 +5,7 @@ import re
 from hashlib import md5
 from datetime import datetime
 from time import time
+from collections import defaultdict
 import urllib.parse
 from aiohttp import ClientSession, ClientTimeout
 from curl_cffi import requests as curl
@@ -1066,18 +1067,14 @@ async def checkSKU():
 
 
 async def errorsMonitor():
-    bad = {}
-    good = {}
+    bad = defaultdict(int)
+    good = defaultdict(int)
     query = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
     for doc in db.sku.find(query):
-        store = doc['store']
-        errors = doc['errors']
-        if store not in good: good[store] = 0
-        if store not in bad: bad[store] = 0
-        if errors == 0:
-            good[store] += 1
+        if doc['errors'] == 0:
+            good[doc['store']] += 1
         else:
-            bad[store] += 1
+            bad[doc['store']] += 1
 
     for store in good:
         if not STORES[store]['active']: continue
