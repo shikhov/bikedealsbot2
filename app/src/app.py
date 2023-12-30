@@ -126,44 +126,40 @@ async def processCmdStart(message: types.Message):
     db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
 
-
-@dp.message_handler(commands='bc', chat_id=ADMINCHATID)
-async def processCmdBroadcast(message: types.Message):
-    await message.answer('🟢 Начало рассылки')
-    msg = message.get_args()
-    msg_hash = md5(msg.encode('utf-8')).hexdigest()
+async def broadcast(message, text, docs):
+    text_hash = md5(text.encode('utf-8')).hexdigest()
     count = 0
+    await message.answer('🟢 Начало рассылки')
 
-    query = {'enable': True}
-    for doc in db.users.find(query):
+    for doc in docs:
         count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
-
-        await asyncio.sleep(0.1)
-        if 'broadcasts' not in doc:
-            doc['broadcasts'] = []
-        if msg_hash in doc['broadcasts']: continue
+        if text_hash in doc.setdefault('broadcasts', []): continue
 
         try:
-            await bot.send_message(chat_id=doc['_id'], text=msg)
-            doc['broadcasts'].append(msg_hash)
+            await bot.send_message(chat_id=doc['_id'], text=text)
+            doc['broadcasts'].append(text_hash)
             db.users.update_one({'_id': doc['_id']}, {'$set': doc})
         except (exceptions.BotBlocked, exceptions.UserDeactivated):
             disableUser(doc['_id'])
+        await asyncio.sleep(0.1)
 
     await message.answer('🔴 Окончание рассылки')
 
 
+@dp.message_handler(commands='bc', chat_id=ADMINCHATID)
+async def processCmdBroadcast(message: types.Message):
+    text = message.get_args()
+    docs = db.users.find({'enable': True})
+    await broadcast(message, text, docs)
+
+
 @dp.message_handler(regexp_commands=[r'^/bc_\w+'], chat_id=ADMINCHATID)
 async def processCmdBroadcastByStore(message: types.Message):
-    await message.answer('🟢 Начало рассылки')
     text = message.get_args()
-    msg_hash = md5(text.encode('utf-8')).hexdigest()
     params = message.get_command().split('_')
     store = params[1].upper()
-    count = 0
-
     docs = db.users.aggregate([
         {
             '$lookup':
@@ -182,24 +178,7 @@ async def processCmdBroadcastByStore(message: types.Message):
             }
         }
     ])
-    for doc in docs:
-        count += 1
-        if count % 100 == 0:
-            await message.answer('Обработано: ' + str(count))
-
-        await asyncio.sleep(0.1)
-        if 'broadcasts' not in doc:
-            doc['broadcasts'] = []
-        if msg_hash in doc['broadcasts']: continue
-
-        try:
-            await bot.send_message(chat_id=doc['_id'], text=text)
-            doc['broadcasts'].append(msg_hash)
-            db.users.update_one({'_id': doc['_id']}, {'$set': doc})
-        except (exceptions.BotBlocked, exceptions.UserDeactivated):
-            disableUser(doc['_id'])
-
-    await message.answer('🔴 Окончание рассылки')
+    await broadcast(message, text, docs)
 
 
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
