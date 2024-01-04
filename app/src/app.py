@@ -187,11 +187,17 @@ async def processCmdReload(message: types.Message):
     await message.answer('Settings successfully reloaded')
 
 
+async def storeDisclaimer(store, message):
+    if not STORES[store]['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return True
+    return False
+
+
 @dp.message_handler(regexp=r'(https://www\.bike-components\.de/\S+p(\d+)\/)', chat_type='private')
 async def processBC(message: types.Message):
     store = 'BC'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'(https://www\.bike-components\.de/)(.+?)(/\S+p(\d+)\/)', message.text)
@@ -203,8 +209,7 @@ async def processBC(message: types.Message):
 @dp.message_handler(regexp=r'https://www\.chainreactioncycles\.com/(\S+/)?p/', chat_type='private')
 async def processCRC(message: types.Message):
     store = 'CRC'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'(https://www\.chainreactioncycles\.com/)(\S+/)?(p/[^?&\s]+)', message.text)
@@ -216,8 +221,7 @@ async def processCRC(message: types.Message):
 @dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+?/)', chat_type='private')
 async def processSB(message: types.Message):
     store = 'SB'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'(https://www\.starbike\.com/en/\S+?/)', message.text)
@@ -229,8 +233,7 @@ async def processSB(message: types.Message):
 @dp.message_handler(regexp=r'(https://www\.tradeinn\.com/\S+/\d+/p)', chat_type='private')
 async def processTI(message: types.Message):
     store = 'TI'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'(https://www\.tradeinn\.com/.+?/)(.+?)(/\S+/\d+/p)', message.text)
@@ -242,8 +245,7 @@ async def processTI(message: types.Message):
 @dp.message_handler(regexp=r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', chat_type='private')
 async def processB24(message: types.Message):
     store = 'B24'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', message.text)
@@ -255,8 +257,7 @@ async def processB24(message: types.Message):
 @dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
 async def processBD(message: types.Message):
     store = 'BD'
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+    if await storeDisclaimer(store, message):
         return
 
     rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', message.text)
