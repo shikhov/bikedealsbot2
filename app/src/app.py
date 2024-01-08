@@ -445,30 +445,20 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
-    sku = variants[skuid]
-    data = {
-        '_id': docid,
-        'chat_id': chat_id,
-        'skuid': skuid,
-        'prodid': sku['prodid'],
-        'variant': sku['variant'],
-        'url': sku['url'],
-        'name': sku['name'],
-        'price': sku['price'],
-        'currency': sku['currency'],
-        'store': sku['store'],
-        'instock': sku['instock'],
-        'errors': 0,
-        'enable': True,
-        'lastcheck': datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M'),
-        'lastcheckts': int(time()),
-        'lastgoodts': int(time()),
-        'instock_prev': None,
-        'price_prev': None
-    }
+    data = variants[skuid]
+    data['_id'] = docid
+    data['chat_id'] = chat_id
+    data['skuid'] = skuid
+    data['errors'] = 0
+    data['enable'] = True
+    data['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
+    data['lastcheckts'] = int(time())
+    data['lastgoodts'] = int(time())
+    data['instock_prev'] = None
+    data['price_prev'] = None
     db.sku.insert_one(data)
 
-    dispname = sku['variant'] if sku['variant'] else sku['name']
+    dispname = data['variant'] if data['variant'] else data['name']
     await sendOrEditMsg(dispname + '\n✔️ Добавлено к отслеживанию', chat_id, message_id, msgtype)
 
 
