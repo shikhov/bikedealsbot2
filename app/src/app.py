@@ -503,8 +503,7 @@ async def getVariants(store, url):
         return doc['variants']
 
     variants = await globals()['parse' + store](url)
-    if variants:
-        cacheVariants(variants)
+    cacheVariants(variants)
     return variants
 
 
@@ -918,6 +917,7 @@ def getSkuString(sku, options):
 
 
 def cacheVariants(variants):
+    if not variants: return
     first_sku = variants[list(variants)[0]]
     docid = first_sku['store'] + '_' + first_sku['prodid']
     data = {
