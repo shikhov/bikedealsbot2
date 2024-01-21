@@ -447,6 +447,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
 
     data = variants[skuid]
     data['_id'] = docid
+    data['store_prodid'] = data['store'] + '_' + data['prodid']
     data['chat_id'] = chat_id
     data['skuid'] = skuid
     data['errors'] = 0
@@ -939,7 +940,7 @@ async def notify():
         value = doc['price_prev'] - doc['price']
         minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
         if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
-            bdkey = doc['store'] + '_' + doc['prodid'] + '_' + doc['skuid']
+            bdkey = doc['store_prodid'] + '_' + doc['skuid']
             bestdeals[bdkey] = skustring + ' ' + str(percents) + '%'
             if percents >= BESTDEALSWARNPERCENTAGE:
                 bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
@@ -998,17 +999,35 @@ def disableUser(chat_id):
 async def checkSKU():
     now = int(time())
 
-    query = {'$and': [{'enable': True},{'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}]}
-    for doc in db.sku.find(query):
+    pipeline = [
+        {
+            '$match': {
+                '$and': [
+                    { 'enable': True },
+                    { 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60} }
+                ]
+            }
+        },
+        {
+            '$lookup': {
+                'from': 'sku',
+                'localField': 'store_prodid',
+                'foreignField': 'store_prodid',
+                'as': 'result'
+            }
+        }
+    ]
+    result = db.sku.aggregate(pipeline)
+    docs = sum([doc['result'] for doc in result], [])
+    for doc in docs:
         if not STORES[doc['store']]['active']: continue
-        if not db.sku.find_one({'_id': doc['_id']}): continue
 
         # increase check interval for inactive SKU
         days_inactive = (now - doc['lastgoodts'])/86400
         if days_inactive >= 1 and doc['lastcheckts'] >= now - (CHECKINTERVAL * 60 + days_inactive * 3600):
             continue
 
-        logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']...')
+        logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
 
         variants = await getVariants(doc['store'], doc['url'])
         if variants and doc['skuid'] in variants:
@@ -1032,7 +1051,10 @@ async def checkSKU():
 
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
-        db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
+        try:
+            db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
+        except Exception:
+            pass
         await asyncio.sleep(REQUESTDELAY)
 
 
