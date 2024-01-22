@@ -1058,7 +1058,7 @@ async def errorsMonitor():
 
 
 if __name__ == '__main__':
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(job_defaults={'misfire_grace_time': None})
     scheduler.start()
 
     scheduler.add_job(checkSKU, 'interval', minutes=5)
