@@ -498,7 +498,7 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
 
 async def getVariants(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
-    query = {'$and': [{'store': store},{'url': url},{'timestamp': {'$gt': tsexpired}}]}
+    query = {{'store': store}, {'url': url}, {'timestamp': {'$gt': tsexpired}}}
     doc = db.skucache.find_one(query)
     if doc:
         return doc['variants']
