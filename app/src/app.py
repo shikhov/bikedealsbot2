@@ -998,27 +998,10 @@ def disableUser(chat_id):
 
 async def checkSKU():
     now = int(time())
-
-    pipeline = [
-        {
-            '$match': {
-                '$and': [
-                    { 'enable': True },
-                    { 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60} }
-                ]
-            }
-        },
-        {
-            '$lookup': {
-                'from': 'sku',
-                'localField': 'store_prodid',
-                'foreignField': 'store_prodid',
-                'as': 'result'
-            }
-        }
-    ]
-    result = db.sku.aggregate(pipeline)
-    docs = sum([doc['result'] for doc in result], [])
+    query = {'enable': True, 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}
+    result = db.sku.find(query)
+    prodlist = list(set([doc['store_prodid'] for doc in result]))
+    docs = db.sku.find({'store_prodid': {"$in": prodlist}, 'enable': True})
     for doc in docs:
         if not STORES[doc['store']]['active']: continue
 
