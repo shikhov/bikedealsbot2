@@ -104,9 +104,9 @@ async def logMessage(message):
 
 def getStoreUrls():
     arr = []
-    for key in STORES:
-        status = '' if STORES[key]['active'] else ' <i>(временно недоступен)</i>'
-        arr.append(STORES[key]['url'] + status)
+    for store in STORES.values():
+        status = '' if store['active'] else ' <i>(временно недоступен)</i>'
+        arr.append(store['url'] + status)
     return arr
 
 
