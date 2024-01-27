@@ -128,11 +128,9 @@ async def processCmdStart(message: types.Message):
 
 async def broadcast(message, text, docs):
     text_hash = md5(text.encode('utf-8')).hexdigest()
-    count = 0
     await message.answer('🟢 Начало рассылки')
 
-    for doc in docs:
-        count += 1
+    for count, doc in enumerate(docs, start=1):
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
         if text_hash in doc.setdefault('broadcasts', []): continue
