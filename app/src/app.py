@@ -236,9 +236,9 @@ async def processTI(message: types.Message):
     if await storeDisclaimer(store, message):
         return
 
-    rg = re.search(r'(https://www\.tradeinn\.com/.+?/)(.+?)(/\S+/\d+/p)', message.text)
+    rg = re.search(r'(https://www\.tradeinn\.com/)(.+?)/(.+?)(/\S+/\d+/p)', message.text)
     if rg:
-        url = rg.group(1) + 'en' + rg.group(3)
+        url = rg.group(1) + 'bikeinn/en' + rg.group(4)
         await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
@@ -826,8 +826,9 @@ async def parseTI(url):
                 content = await response.text()
                 url = str(response.url)
 
-        matches = re.search(r'https://www.tradeinn.com/.+/(\d+)/p', url, re.DOTALL)
-        prodid = matches.group(1)
+        rg = re.search(r'(https://www\.tradeinn\.com/)(.+?)/(.+?)(/\S+/)(\d+)/p', url)
+        url = rg.group(1) + 'bikeinn/en' + rg.group(4) + rg.group(5) + '/p'
+        prodid = rg.group(5)
 
         soup = BeautifulSoup(content, 'lxml')
         res = soup.find_all('h1', {'class': 'productName'})
