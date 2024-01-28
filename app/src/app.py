@@ -829,6 +829,23 @@ async def parseTI(url):
         prodid = rg.group(5)
 
         soup = BeautifulSoup(content, 'lxml')
+
+        id_tienda = soup.find('input', {'name': 'id_tienda'}).get('value')
+        jsurl = f'https://www.tradeinn.com/index.php?action=get_datos_producto&id_tienda={id_tienda}&id_modelo={prodid}&solo_altas=1&idioma=eng&ajax=1'
+
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(jsurl) as response:
+                jscontent = await response.text()
+
+        jsdata = json.loads(jscontent)
+        outofstock = True
+        for product in jsdata['id_productes']:
+            if product['precio_win'] > 0:
+                outofstock = False
+                break
+
+        if outofstock: return None
+
         res = soup.find_all('h1', {'class': 'productName'})
         name = res[0].string
 
