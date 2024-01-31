@@ -536,7 +536,7 @@ async def removeInvalidSKU():
 async def parseB24(url):
     try:
         async with curl.AsyncSession() as session:
-            response = await session.get(url, impersonate='chrome110', timeout=HTTPTIMEOUT)
+            response = await session.get(url, impersonate='safari15_5', timeout=HTTPTIMEOUT)
             content = response.text
 
         matches = re.search(r'window\.dataLayer\.push\(({\\"vpv.+?})\);', content, re.DOTALL)
