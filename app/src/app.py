@@ -29,7 +29,6 @@ class Product:
     store = None
     storelc = None
     var_count = 0
-    isEmpty = True
 
     def __init__(self, data, source):
         self.variants = data
@@ -42,16 +41,23 @@ class Product:
             self.store = first_sku['store']
             self.storelc = first_sku['store'].lower()
             self.var_count = len(data)
-            self.isEmpty = False
 
     def getSkuAddList(self):
         text_array = []
         text_array.append(self.name)
-        for skuid, sku in sorted(self.variants.values()):
+        for skuid, sku in self.variants.items():
             line = getSkuString(sku, ['icon', 'price']) + f'\n<i>Добавить: /add_{self.storelc}_{self.id}_{skuid}</i>'
             text_array.append(line)
 
         return text_array
+
+    def hasSku(self, skuid):
+        if not self.variants:
+            return False
+        if skuid not in self.variants:
+            return False
+        return True
+
 
 
 def loadSettings():
@@ -463,7 +469,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         return
 
     prod = await getProduct(store, url)
-    if prod.isEmpty or skuid not in prod.variants:
+    if not prod.hasSku(skuid):
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
@@ -1059,7 +1065,7 @@ async def checkSKU():
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
 
         prod = await getProduct(doc['store'], doc['url'])
-        if not prod.isEmpty and doc['skuid'] in prod.variants:
+        if prod.hasSku(doc['skuid']):
             sku = prod.variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
                 doc['instock_prev'] = doc['instock']
