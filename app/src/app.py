@@ -22,6 +22,37 @@ from pymongo import MongoClient, UpdateOne
 from config import CONNSTRING, DBNAME
 db = MongoClient(CONNSTRING).get_database(DBNAME)
 
+class Product:
+    id = None
+    first_skuid = None
+    name = None
+    store = None
+    storelc = None
+    var_count = 0
+    isEmpty = True
+
+    def __init__(self, data, source):
+        self.variants = data
+        self.source = source
+        if data:
+            first_sku = list(data.values())[0]
+            self.id = first_sku['prodid']
+            self.first_skuid = list(data.keys())[0]
+            self.name = first_sku['name']
+            self.store = first_sku['store']
+            self.storelc = first_sku['store'].lower()
+            self.var_count = len(data)
+            self.isEmpty = False
+
+    def getSkuAddList(self):
+        text_array = []
+        text_array.append(self.name)
+        for skuid, sku in sorted(self.variants.values()):
+            line = getSkuString(sku, ['icon', 'price']) + f'\n<i>Добавить: /add_{self.storelc}_{self.id}_{skuid}</i>'
+            text_array.append(line)
+
+        return text_array
+
 
 def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
@@ -309,7 +340,7 @@ async def processCmdList(message: types.Message):
 
     for doc in db.sku.find(query):
         key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
-        line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + '\n' + '<i>Удалить: /del_' + key + '</i>'
+        line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
         text_array.append(line)
 
     await paginatedTgMsg(text_array, chat_id)
@@ -349,15 +380,15 @@ async def processCmdStat(message: types.Message):
     skuactive = db.sku.count_documents({'enable': True})
 
     msg = ''
-    msg += '<b>Total users:</b> ' + str(usersall) + '\n'
-    msg += '<b>Enabled users:</b> ' + str(usersactive) + '\n'
-    msg += '<b>Enabled users with SKU:</b> ' + str(userswsku) + '\n'
-    msg += '<b>Total SKU:</b> ' + str(skuall) + '\n'
-    msg += '<b>Active SKU:</b> ' + str(skuactive) + '\n'
+    msg += f'<b>Total users:</b> {usersall}\n'
+    msg += f'<b>Enabled users:</b> {usersactive}\n'
+    msg += f'<b>Enabled users with SKU:</b> {userswsku}\n'
+    msg += f'<b>Total SKU:</b> {skuall}\n'
+    msg += f'<b>Active SKU:</b> {skuactive}\n'
 
     for key in STORES.keys():
         num = db.sku.count_documents({'store': key})
-        msg += '<b>' + key + ':</b> ' + str(num) + '\n'
+        msg += f'<b>{key}:</b> {num}\n'
 
     TOPNUMBER = 10
     docs = db.users.aggregate([
@@ -383,11 +414,11 @@ async def processCmdStat(message: types.Message):
             '$limit': TOPNUMBER
         }
     ])
-    msg += '\n<b>Top ' + str(TOPNUMBER) + ' users:</b>\n'
+    msg += f'\n<b>Top {TOPNUMBER} users:</b>\n'
     for doc in docs:
         username = ' (' + doc['username'] + ')' if doc['username'] else ''
         full_name = doc['first_name'] + ' ' + doc['last_name'] if doc['last_name'] else doc['first_name']
-        msg += full_name + username + ': ' + str(doc['sku_count']) + '\n'
+        msg += f'{full_name}{username}: {doc["sku_count"]}\n'
 
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
@@ -403,21 +434,14 @@ async def showVariants(store, url, chat_id, message_id):
     msg = await bot.send_message(chat_id, '🔎 Ищу информацию о товаре...', reply_to_message_id=message_id)
 
     text_array = []
-    variants = await getVariants(store, url)
-    if variants:
-        first_skuid = list(variants)[0]
-        if len(variants) == 1:
-            prodid = variants[first_skuid]['prodid']
-            await addVariant(store, prodid, first_skuid, chat_id, msg.message_id, 'edit')
-            return
-
-        text_array.append(variants[first_skuid]['name'])
-        for skuid in sorted(variants):
-            sku = variants[skuid]
-            line = getSkuString(sku, ['icon', 'price']) + '\n<i>Добавить: /add_' + store.lower() + '_' +  sku['prodid'] + '_' + skuid + '</i>'
-            text_array.append(line)
-    else:
+    prod = await getProduct(store, url)
+    if prod.var_count == 0:
         text_array.append('Не смог найти цену 😧')
+    elif prod.var_count == 1:
+        await addVariant(store, prod.id, prod.first_skuid, chat_id, msg.message_id, 'edit')
+        return
+    elif prod.var_count > 1:
+        text_array = prod.getSkuAddList()
 
     await paginatedTgMsg(text_array, chat_id, msg.message_id)
 
@@ -438,12 +462,12 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
-    variants = await getVariants(store, url)
-    if not variants or skuid not in variants:
+    prod = await getProduct(store, url)
+    if prod.isEmpty or skuid not in prod.variants:
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
-    data = variants[skuid]
+    data = prod.variants[skuid].copy()
     data['_id'] = docid
     data['store_prodid'] = data['store'] + '_' + data['prodid']
     data['chat_id'] = chat_id
@@ -494,16 +518,17 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
         await sendOrEditMsg()
 
 
-async def getVariants(store, url):
+async def getProduct(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
-    query = {'store': store, 'url': url, 'timestamp': {'$gt': tsexpired}}
+    query = {'url': url, 'timestamp': {'$gt': tsexpired}}
     doc = db.skucache.find_one(query)
     if doc:
-        return doc['variants']
+        return Product(data=doc['variants'], source='cache')
 
-    variants = await globals()['parse' + store](url)
-    cacheVariants(variants)
-    return variants
+    parseFunction = globals()['parse' + store]
+    variants = await parseFunction(url)
+    cacheVariants(url, variants)
+    return Product(data=variants, source='web')
 
 
 async def clearSKUCache():
@@ -918,32 +943,35 @@ def getSkuString(sku, options):
     pricetxt_prev = ''
 
     if 'url' in options:
-        urlname = '<a href="' + url + '">' + name + '</a>' + '\n'
+        urlname = f'<a href="{url}">{name}</a>\n'
     if 'icon' in options:
         icon = '✅ ' if instock else '🚫 '
         if errors > ERRORMINTHRESHOLD: icon = '⚠️ '
         if not STORES[store]['active']: icon = '⏳ '
     if 'store' in options:
-        storename = '<code>[' + store + ']</code> '
+        storename = f'<code>[{store}]</code> '
     if 'price' in options:
-        pricetxt = ' <b>' + price + ' ' + currency + '</b>'
+        pricetxt = f' <b>{price} {currency}</b>'
     if 'price_prev' in options:
-        pricetxt_prev = ' (было: ' + price_prev + ' ' + currency + ')'
+        pricetxt_prev = f' (было: {price_prev} {currency})'
 
     return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip()
 
 
-def cacheVariants(variants):
-    if not variants: return
-    first_sku = variants[list(variants)[0]]
-    docid = first_sku['store'] + '_' + first_sku['prodid']
+def cacheVariants(url, variants):
+    if variants:
+        first_sku = list(variants.values())[0]
+        docid = first_sku['store'] + '_' + first_sku['prodid']
+        query = {'_id': docid}
+    else:
+        query = {'url': url}
+
     data = {
-        'variants': variants,
-        'timestamp': int(time()),
-        'url': first_sku['url'],
-        'store': first_sku['store']
+            'variants': variants,
+            'timestamp': int(time()),
+            'url': url
     }
-    db.skucache.update_one({'_id': docid}, {'$set': data}, upsert=True)
+    db.skucache.update_one(query, {'$set': data}, upsert=True)
 
 
 async def notify():
@@ -951,15 +979,17 @@ async def notify():
         messages.setdefault(doc['chat_id'], []).append(msg)
 
     def processBestDeals():
-        if doc['price_prev'] == 0: return
-        percents = int((1 - doc['price']/float(doc['price_prev']))*100)
-        value = doc['price_prev'] - doc['price']
+        price_prev = doc['price_prev']
+        price = doc['price']
+        if price_prev == 0: return
+        percents = int((1 - price/float(price_prev))*100)
+        value = price_prev - price
         minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
         if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
             bdkey = doc['store_prodid'] + '_' + doc['skuid']
             bestdeals[bdkey] = skustring + ' ' + str(percents) + '%'
             if percents >= BESTDEALSWARNPERCENTAGE:
-                bestdeals[bdkey] = bestdeals[bdkey] + '‼️'
+                bestdeals[bdkey] += '‼️'
 
     messages = {}
     bestdeals = {}
@@ -1017,20 +1047,20 @@ async def checkSKU():
     query = {'enable': True, 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}
     result = db.sku.find(query)
     prodlist = list(set([doc['store_prodid'] for doc in result]))
-    docs = db.sku.find({'store_prodid': {"$in": prodlist}, 'enable': True})
+    docs = db.sku.find({'store_prodid': {'$in': prodlist}, 'enable': True}).sort('store_prodid')
     for doc in docs:
         if not STORES[doc['store']]['active']: continue
 
         # increase check interval for inactive SKU
-        days_inactive = (now - doc['lastgoodts'])/86400
-        if days_inactive >= 1 and doc['lastcheckts'] >= now - (CHECKINTERVAL * 60 + days_inactive * 3600):
-            continue
+        # days_inactive = (now - doc['lastgoodts'])/86400
+        # if days_inactive >= 1 and doc['lastcheckts'] >= now - (CHECKINTERVAL * 60 + days_inactive * 3600):
+            # continue
 
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
 
-        variants = await getVariants(doc['store'], doc['url'])
-        if variants and doc['skuid'] in variants:
-            sku = variants[doc['skuid']]
+        prod = await getProduct(doc['store'], doc['url'])
+        if not prod.isEmpty and doc['skuid'] in prod.variants:
+            sku = prod.variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
                 doc['instock_prev'] = doc['instock']
 
@@ -1054,7 +1084,8 @@ async def checkSKU():
             db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
         except Exception:
             pass
-        await asyncio.sleep(REQUESTDELAY)
+        if prod.source == 'web':
+            await asyncio.sleep(REQUESTDELAY)
 
 
 async def errorsMonitor():
