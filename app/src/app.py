@@ -439,17 +439,13 @@ async def sendOrEditMsg(msg, chat_id, message_id, msgtype):
 async def showVariants(store, url, chat_id, message_id):
     msg = await bot.send_message(chat_id, '🔎 Ищу информацию о товаре...', reply_to_message_id=message_id)
 
-    text_array = []
     prod = await getProduct(store, url)
     if prod.var_count == 0:
-        text_array.append('Не смог найти цену 😧')
+        await bot.edit_message_text('Не смог найти цену 😧', chat_id, msg.message_id)
     elif prod.var_count == 1:
         await addVariant(store, prod.id, prod.first_skuid, chat_id, msg.message_id, 'edit')
-        return
     elif prod.var_count > 1:
-        text_array = prod.getSkuAddList()
-
-    await paginatedTgMsg(text_array, chat_id, msg.message_id)
+        await paginatedTgMsg(prod.getSkuAddList(), chat_id, msg.message_id)
 
 
 async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
