@@ -12,7 +12,8 @@ from curl_cffi import requests as curl
 import crcmod.predefined
 
 from bs4 import BeautifulSoup, Tag
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, executor
+from aiogram.types import Message
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.utils import exceptions
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -94,7 +95,7 @@ class LoggingMiddleware(BaseMiddleware):
     def __init__(self):
         super(LoggingMiddleware, self).__init__()
 
-    async def on_pre_process_message(self, message: types.Message, data: dict):
+    async def on_pre_process_message(self, message: Message, data: dict):
         if message.text == '/start': return
         if message.chat.type != 'private': return
 
@@ -111,7 +112,7 @@ class LoggingMiddleware(BaseMiddleware):
             db.users.insert_one(data)
 
 
-    async def on_post_process_message(self, message: types.Message, results, data: dict):
+    async def on_post_process_message(self, message: Message, results, data: dict):
         await logMessage(message)
 
 
@@ -130,7 +131,7 @@ dp = Dispatcher(bot)
 dp.middleware.setup(LoggingMiddleware())
 
 
-async def logMessage(message):
+async def logMessage(message: Message):
     if not LOGCHATID: return
     if message.from_user.id == ADMINCHATID: return
 
@@ -148,7 +149,7 @@ def getStoreUrls():
 
 
 @dp.message_handler(commands='start', chat_type='private')
-async def processCmdStart(message: types.Message):
+async def processCmdStart(message: Message):
     msg = substituteVars(BANNERSTART)
     await message.answer(msg)
 
@@ -163,7 +164,7 @@ async def processCmdStart(message: types.Message):
     db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
 
-async def broadcast(message, text, docs):
+async def broadcast(message: Message, text, docs):
     text_hash = md5(text.encode('utf-8')).hexdigest()
     await message.answer('🟢 Начало рассылки')
 
@@ -184,14 +185,14 @@ async def broadcast(message, text, docs):
 
 
 @dp.message_handler(commands='bc', chat_id=ADMINCHATID)
-async def processCmdBroadcast(message: types.Message):
+async def processCmdBroadcast(message: Message):
     text = message.get_args()
     docs = db.users.find({'enable': True})
     await broadcast(message, text, docs)
 
 
 @dp.message_handler(regexp_commands=[r'^/bc_\w+'], chat_id=ADMINCHATID)
-async def processCmdBroadcastByStore(message: types.Message):
+async def processCmdBroadcastByStore(message: Message):
     text = message.get_args()
     params = message.get_command().split('_')
     store = params[1].upper()
@@ -217,12 +218,12 @@ async def processCmdBroadcastByStore(message: types.Message):
 
 
 @dp.message_handler(commands='reload', chat_id=ADMINCHATID)
-async def processCmdReload(message: types.Message):
+async def processCmdReload(message: Message):
     loadSettings()
     await message.answer('Settings successfully reloaded')
 
 
-async def storeDisclaimer(store, message):
+async def storeDisclaimer(store, message: Message):
     if not STORES[store]['active']:
         await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
         return True
@@ -230,7 +231,7 @@ async def storeDisclaimer(store, message):
 
 
 @dp.message_handler(regexp=r'(https://www\.bike-components\.de/\S+p(\d+)\/)', chat_type='private')
-async def processBC(message: types.Message):
+async def processBC(message: Message):
     store = 'BC'
     if await storeDisclaimer(store, message):
         return
@@ -242,7 +243,7 @@ async def processBC(message: types.Message):
 
 
 @dp.message_handler(regexp=r'https://www\.chainreactioncycles\.com/(\S+/)?p/', chat_type='private')
-async def processCRC(message: types.Message):
+async def processCRC(message: Message):
     store = 'CRC'
     if await storeDisclaimer(store, message):
         return
@@ -254,7 +255,7 @@ async def processCRC(message: types.Message):
 
 
 @dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+?/)', chat_type='private')
-async def processSB(message: types.Message):
+async def processSB(message: Message):
     store = 'SB'
     if await storeDisclaimer(store, message):
         return
@@ -266,7 +267,7 @@ async def processSB(message: types.Message):
 
 
 @dp.message_handler(regexp=r'(https://www\.tradeinn\.com/\S+/\d+/p)', chat_type='private')
-async def processTI(message: types.Message):
+async def processTI(message: Message):
     store = 'TI'
     if await storeDisclaimer(store, message):
         return
@@ -278,7 +279,7 @@ async def processTI(message: types.Message):
 
 
 @dp.message_handler(regexp=r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', chat_type='private')
-async def processB24(message: types.Message):
+async def processB24(message: Message):
     store = 'B24'
     if await storeDisclaimer(store, message):
         return
@@ -290,7 +291,7 @@ async def processB24(message: types.Message):
 
 
 @dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
-async def processBD(message: types.Message):
+async def processBD(message: Message):
     store = 'BD'
     if await storeDisclaimer(store, message):
         return
@@ -302,7 +303,7 @@ async def processBD(message: types.Message):
 
 
 @dp.message_handler(regexp_commands=[r'^/add_\w+_\w+_\w+$'], chat_type='private')
-async def processCmdAdd(message: types.Message):
+async def processCmdAdd(message: Message):
     chat_id = str(message.from_user.id)
     params = message.text.split('_')
     store = params[1].upper()
@@ -312,7 +313,7 @@ async def processCmdAdd(message: types.Message):
 
 
 @dp.message_handler(regexp_commands=[r'^/del_\w+_\w+_\w+$'], chat_type='private')
-async def processCmdDel(message: types.Message):
+async def processCmdDel(message: Message):
     chat_id = str(message.from_user.id)
     docid = chat_id + '_' + message.text.replace('/del_', '').upper()
     query = {'_id': docid}
@@ -324,18 +325,18 @@ async def processCmdDel(message: types.Message):
 
 
 @dp.message_handler(commands='help', chat_type='private')
-async def processCmdHelp(message: types.Message):
+async def processCmdHelp(message: Message):
     msg = substituteVars(BANNERHELP)
     await message.answer(msg)
 
 
 @dp.message_handler(commands='donate', chat_type='private')
-async def processCmdDonate(message: types.Message):
+async def processCmdDonate(message: Message):
     await message.answer(BANNERDONATE)
 
 
 @dp.message_handler(commands='list', chat_type='private')
-async def processCmdList(message: types.Message):
+async def processCmdList(message: Message):
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
     if db.sku.count_documents(query) == 0:
@@ -353,7 +354,7 @@ async def processCmdList(message: types.Message):
 
 
 @dp.message_handler(commands='stat', chat_id=ADMINCHATID)
-async def processCmdStat(message: types.Message):
+async def processCmdStat(message: Message):
     sent_msg = await message.answer('Getting stat...')
 
     usersall = db.users.count_documents({})
@@ -429,11 +430,11 @@ async def processCmdStat(message: types.Message):
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
 
-async def sendOrEditMsg(msg, chat_id, message_id, msgtype):
+async def sendOrEditMsg(text, chat_id, message_id, msgtype):
     if msgtype == 'reply':
-        await bot.send_message(chat_id=chat_id, text=msg, reply_to_message_id=message_id)
+        await bot.send_message(chat_id=chat_id, text=text, reply_to_message_id=message_id)
     if msgtype == 'edit':
-        await bot.edit_message_text(text=msg, chat_id=chat_id, message_id=message_id)
+        await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id)
 
 
 async def showVariants(store, url, chat_id, message_id):
@@ -483,7 +484,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
     data['price_prev'] = None
     db.sku.insert_one(data)
 
-    dispname = data['variant'] if data['variant'] else data['name']
+    dispname = data['variant'] or data['name']
     await sendOrEditMsg(dispname + '\n✔️ Добавлено к отслеживанию', chat_id, message_id, msgtype)
 
 
