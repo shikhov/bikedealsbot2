@@ -317,8 +317,7 @@ async def processCmdDel(message: Message):
     chat_id = str(message.from_user.id)
     docid = chat_id + '_' + message.text.replace('/del_', '').upper()
     query = {'_id': docid}
-    if db.sku.find_one(query):
-        db.sku.delete_one(query)
+    if db.sku.delete_one(query).deleted_count == 1:
         await message.answer('Удалено')
         return
     await message.answer('Какая-то ошибка 😧')
