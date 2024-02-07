@@ -337,18 +337,18 @@ async def processCmdDonate(message: Message):
 
 @dp.message_handler(commands='list', chat_type='private')
 async def processCmdList(message: Message):
+    text_array = []
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
-    if db.sku.count_documents(query) == 0:
-        await message.answer('Ваш список пуст')
-        return
-
-    text_array = ['Отслеживаемые товары:']
-
     for doc in db.sku.find(query):
         key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
         line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
         text_array.append(line)
+
+    if text_array:
+        text_array = ['Отслеживаемые товары:'] + text_array
+    else:
+        text_array = ['Ваш список пуст']
 
     await paginatedTgMsg(text_array, chat_id)
 
