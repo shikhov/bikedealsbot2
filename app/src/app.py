@@ -1000,8 +1000,6 @@ async def notify():
 
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     for doc in db.sku.find(query):
-        if not db.sku.find_one({'_id': doc['_id']}): continue
-
         if doc['instock_prev'] is not None:
             skustring = getSkuString(doc, ['store', 'url', 'price'])
             if doc['instock']:
