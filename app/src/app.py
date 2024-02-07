@@ -430,6 +430,34 @@ async def processCmdStat(message: Message):
     await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
 
 
+@dp.message_handler(chat_type='private')
+async def processSearch(message: Message):
+    text = message.text
+    if not text: return
+
+    try:
+        pattern = re.compile(text, re.I)
+    except Exception:
+        await message.reply('⚠️ Некорректное выражение')
+        return
+
+    chat_id = str(message.from_user.id)
+    query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
+    text_array = []
+    for doc in db.sku.find(query):
+        key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
+        line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
+        text_array.append(line)
+
+    header = f'Результаты поиска по строке <b>{text}</b>:'
+    if text_array:
+        text_array = [header] + text_array
+    else:
+        text_array = [header, 'Ничего не найдено']
+
+    await paginatedTgMsg(text_array, chat_id)
+
+
 async def sendOrEditMsg(text, chat_id, message_id, msgtype):
     if msgtype == 'reply':
         await bot.send_message(chat_id=chat_id, text=text, reply_to_message_id=message_id)
