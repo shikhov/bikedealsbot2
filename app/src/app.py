@@ -960,8 +960,8 @@ def getSkuString(sku, options):
     url = sku['url']
     name = sku['name']
     variant = sku['variant']
-    price = str(sku['price'])
-    price_prev = str(sku.get('price_prev'))
+    price = sku['price']
+    price_prev = sku.get('price_prev')
     currency = sku['currency']
     store = sku['store']
     errors = sku.get('errors', 0)
