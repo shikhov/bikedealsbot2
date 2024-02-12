@@ -62,6 +62,7 @@ def loadSettings():
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
     global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY
+    global LOGFILTER
 
     settings = db.settings.find_one({'_id': 'settings'})
 
@@ -77,6 +78,7 @@ def loadSettings():
     MAXITEMSPERUSER = settings['MAXITEMSPERUSER']
     CHECKINTERVAL = settings['CHECKINTERVAL']
     LOGCHATID = settings['LOGCHATID']
+    LOGFILTER = settings['LOGFILTER']
     BANNERSTART = settings['BANNERSTART']
     BANNERHELP = settings['BANNERHELP']
     BANNERDONATE = settings['BANNERDONATE']
@@ -127,6 +129,7 @@ dp.middleware.setup(LoggingMiddleware())
 async def logMessage(message: Message):
     if not LOGCHATID: return
     if message.from_user.id == ADMINCHATID: return
+    if message.text in LOGFILTER: return
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
     logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
