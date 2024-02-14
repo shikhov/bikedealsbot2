@@ -61,8 +61,7 @@ def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, BANNEROLDUSER, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY
-    global LOGFILTER
+    global BANNERDONATE, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY, LOGFILTER
 
     settings = db.settings.find_one({'_id': 'settings'})
 
@@ -82,7 +81,6 @@ def loadSettings():
     BANNERSTART = settings['BANNERSTART']
     BANNERHELP = settings['BANNERHELP']
     BANNERDONATE = settings['BANNERDONATE']
-    BANNEROLDUSER = settings['BANNEROLDUSER']
     STORES = settings['STORES']
     DEBUG = settings['DEBUG']
     HTTPTIMEOUT = settings['HTTPTIMEOUT']
@@ -99,7 +97,6 @@ class LoggingMiddleware(BaseMiddleware):
 
         chat_id = str(message.from_user.id)
         if not db.users.find_one({'_id': chat_id}):
-            await message.answer(BANNEROLDUSER)
             data = {
                 '_id': chat_id,
                 'first_name': message.from_user.first_name,
