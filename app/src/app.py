@@ -295,6 +295,12 @@ async def processBD(message: Message):
         await showVariants(store, url, str(message.from_user.id), message.message_id)
 
 
+@dp.message_handler(regexp=r'https?://', chat_type='private')
+async def processUnknownURL(message: Message):
+    await message.reply('⚠️ Этот сайт не поддерживается. Список поддерживаемых смотрите в /help')
+    return
+
+
 @dp.message_handler(regexp_commands=[r'^/add_\w+_\w+_\w+$'], chat_type='private')
 async def processCmdAdd(message: Message):
     chat_id = str(message.from_user.id)
@@ -427,13 +433,18 @@ async def processSearch(message: Message):
     text = message.text
     if not text: return
 
+    chat_id = str(message.from_user.id)
+    query = {'chat_id': chat_id}
+    if db.sku.count_documents(query) == 0:
+        await message.answer('⚠️ Ваш список пуст, поиск невозможен')
+        return
+
     try:
         pattern = re.compile(text, re.I)
     except Exception:
         await message.reply('⚠️ Некорректное выражение')
         return
 
-    chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
     text_array = []
     for doc in db.sku.find(query):
