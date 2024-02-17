@@ -216,89 +216,60 @@ async def processCmdReload(message: Message):
     await message.answer('Settings successfully reloaded')
 
 
-async def storeDisclaimer(store, message: Message):
-    if not STORES[store]['active']:
-        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
-        return True
-    return False
-
-
-@dp.message_handler(regexp=r'(https://www\.bike-components\.de/\S+p(\d+)\/)', chat_type='private')
-async def processBC(message: Message):
-    store = 'BC'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'(https://www\.bike-components\.de/)(.+?)(/\S+p(\d+)\/)', message.text)
-    if rg:
-        url = rg.group(1) + 'en' + rg.group(3)
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
-@dp.message_handler(regexp=r'https://www\.chainreactioncycles\.com/(\S+/)?p/', chat_type='private')
-async def processCRC(message: Message):
-    store = 'CRC'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'(https://www\.chainreactioncycles\.com/)(\S+/)?(p/[^?&\s]+)', message.text)
-    if rg:
-        url = rg.group(1) + 'int/' + rg.group(3)
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
-@dp.message_handler(regexp=r'(https://www\.starbike\.com/en/\S+?/)', chat_type='private')
-async def processSB(message: Message):
-    store = 'SB'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'(https://www\.starbike\.com/en/\S+?/)', message.text)
-    if rg:
-        url = rg.group(1)
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
-@dp.message_handler(regexp=r'(https://www\.tradeinn\.com/\S+/\d+/p)', chat_type='private')
-async def processTI(message: Message):
-    store = 'TI'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'(https://www\.tradeinn\.com/)(.+?)/(.+?)(/\S+/\d+/p)', message.text)
-    if rg:
-        url = rg.group(1) + 'bikeinn/en' + rg.group(4)
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
-@dp.message_handler(regexp=r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', chat_type='private')
-async def processB24(message: Message):
-    store = 'B24'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', message.text)
-    if rg:
-        url = 'https://www.bike24.com/p2' + rg.group(3) + '.html'
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
-@dp.message_handler(regexp=r'https://www\.bike-discount\.de/.+?/[^?&\s]+', chat_type='private')
-async def processBD(message: Message):
-    store = 'BD'
-    if await storeDisclaimer(store, message):
-        return
-
-    rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', message.text)
-    if rg:
-        url = 'https://www.bike-discount.de/en/' + rg.group(1)
-        await showVariants(store, url, str(message.from_user.id), message.message_id)
-
-
 @dp.message_handler(regexp=r'https?://', chat_type='private')
-async def processUnknownURL(message: Message):
-    await message.reply('⚠️ Этот сайт не поддерживается. Список поддерживаемых смотрите в /help')
+async def processURLMsg(message: Message):
+    for store, attrs in STORES.items():
+        if re.search(attrs['url_regex'], message.text):
+            break
+    else:
+        await message.reply('⚠️ Этот сайт не поддерживается. Список поддерживаемых смотрите в /help')
+        return
+
+    if not attrs['active']:
+        await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
+        return
+
+    url = processURL(store, message.text)
+    if not url:
+        await message.reply('🤷‍♂️ Не могу понять. Кажется, это не ссылка на товар')
+        return
+
+    await showVariants(store, url, str(message.from_user.id), message.message_id)
     return
+
+
+def processURL(store, text):
+    if store == 'BD':
+        rg = re.search(r'https://www\.bike-discount\.de/.+?/([^?&\s]+)', text)
+        if rg:
+            return 'https://www.bike-discount.de/en/' + rg.group(1)
+
+    if store == 'B24':
+        rg = re.search(r'(https://www\.bike24\.(com|de)/p[12](\d+)\.html)', text)
+        if rg:
+            return 'https://www.bike24.com/p2' + rg.group(3) + '.html'
+
+    if store == 'TI':
+        rg = re.search(r'(https://www\.tradeinn\.com/)(.+?)/(.+?)(/\S+/\d+/p)', text)
+        if rg:
+            return rg.group(1) + 'bikeinn/en' + rg.group(4)
+
+    if store == 'SB':
+        rg = re.search(r'(https://www\.starbike\.com/en/\S+?/)', text)
+        if rg:
+            return rg.group(1)
+
+    if store == 'CRC':
+        rg = re.search(r'(https://www\.chainreactioncycles\.com/)(\S+/)?(p/[^?&\s]+)', text)
+        if rg:
+            return rg.group(1) + 'int/' + rg.group(3)
+
+    if store == 'BC':
+        rg = re.search(r'(https://www\.bike-components\.de/)(.+?)(/\S+p(\d+)\/)', text)
+        if rg:
+            return rg.group(1) + 'en' + rg.group(3)
+
+    return None
 
 
 @dp.message_handler(regexp_commands=[r'^/add_\w+_\w+_\w+$'], chat_type='private')
