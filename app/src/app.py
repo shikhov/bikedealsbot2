@@ -424,11 +424,7 @@ async def processSearch(message: Message):
         text_array.append(line)
 
     header = f'Результаты поиска по строке <b>{text}</b>:'
-    if text_array:
-        text_array = [header] + text_array
-    else:
-        text_array = [header, 'Ничего не найдено']
-
+    text_array = [header] + (text_array or ['Ничего не найдено'])
     await paginatedTgMsg(text_array, chat_id)
 
 

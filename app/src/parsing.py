@@ -152,7 +152,12 @@ async def parseB24(url, httptimeout):
 
 async def parseTI(url, httptimeout):
     headers = {
-        'Cookie': 'id_pais=164'
+        'Cookie': 'id_pais=164',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+        'Host': 'www.tradeinn.com',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.8,ru;q=0.5,ru-RU;q=0.3',
+        'Accept-Encoding': 'gzip, deflate, br'
     }
     timeout = ClientTimeout(total=httptimeout)
     url = url.replace(chr(160), '')
