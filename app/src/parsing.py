@@ -7,6 +7,8 @@ from aiohttp import ClientSession, ClientTimeout
 from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests as curl
 
+from app import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
+
 crc16 = crcmod.predefined.Crc('crc-16')
 crc32 = crcmod.predefined.Crc('crc-32')
 
@@ -55,10 +57,12 @@ async def parseSB(url, httptimeout):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = name
             variants[skuid]['instock'] = instock[x['meta-id']]
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
 
 
 async def parseB24(url, httptimeout):
@@ -133,7 +137,7 @@ async def parseB24(url, httptimeout):
                         variants[skuid]['url'] = url
                         variants[skuid]['name'] = name
             if len(jsdata['productOptionList']) > 2:
-                return None # there are no examples yet
+                raise Exception
         else:
             variants['0'] = {}
             variants['0']['variant'] = variant
@@ -144,10 +148,12 @@ async def parseB24(url, httptimeout):
             variants['0']['url'] = url
             variants['0']['name'] = name
             variants['0']['instock'] = instock
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
 
 
 async def parseTI(url, httptimeout):
@@ -188,7 +194,7 @@ async def parseTI(url, httptimeout):
                 outofstock = False
                 break
 
-        if outofstock: return None
+        if outofstock: raise Exception
 
         res = soup.find_all('h1', {'class': 'productName'})
         name = res[0].string
@@ -197,7 +203,7 @@ async def parseTI(url, httptimeout):
             return tag.parent.get('id') == 'tallas_detalle'
 
         res = soup.find_all(findVariants)
-        if not res: return None
+        if not res: raise Exception
 
         varnames = {}
         for child in res:
@@ -205,7 +211,7 @@ async def parseTI(url, httptimeout):
             varnames[varid] = child.string
 
         res = soup.find_all(itemtype='http://schema.org/Offer')
-        if not res: return None
+        if not res: raise Exception
 
         variants = {}
         for x in res:
@@ -238,10 +244,12 @@ async def parseTI(url, httptimeout):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = name
             variants[skuid]['instock'] = instock
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
 
 
 async def parseBC(url, httptimeout):
@@ -270,10 +278,12 @@ async def parseBC(url, httptimeout):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
             variants[skuid]['instock'] = 'InStock' in sku['availability']
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
 
 
 async def parseBD(url, httptimeout):
@@ -329,10 +339,12 @@ async def parseBD(url, httptimeout):
             variants['0']['url'] = url
             variants['0']['name'] = name
             variants['0']['instock'] = instock
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
 
 
 async def parseCRC(url, httptimeout):
@@ -377,7 +389,9 @@ async def parseCRC(url, httptimeout):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = jsbody['name']
             variants[skuid]['instock'] = variant['stockLevel']['inStock']
-    except Exception:
-        return None
 
-    return variants
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}

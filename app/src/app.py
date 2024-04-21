@@ -17,6 +17,11 @@ from pymongo import MongoClient, UpdateOne
 import parsing
 
 from config import CONNSTRING, DBNAME
+
+STATUS_OK = 0
+STATUS_TIMEOUTERROR = 1
+STATUS_PARSINGERROR = 2
+
 db = MongoClient(CONNSTRING).get_database(DBNAME)
 
 class Product:
@@ -527,9 +532,9 @@ async def getProduct(store, url):
         return Product(data=doc['variants'], source='cache')
 
     parseFunction = getattr(parsing, 'parse' + store)
-    variants = await parseFunction(url, HTTPTIMEOUT)
-    cacheVariants(url, variants)
-    return Product(data=variants, source='web')
+    result = await parseFunction(url, HTTPTIMEOUT)
+    cacheVariants(url, result)
+    return Product(data=result['variants'], source='web')
 
 
 async def clearSKUCache():
@@ -592,7 +597,11 @@ def getSkuString(sku, options):
     return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip()
 
 
-def cacheVariants(url, variants):
+def cacheVariants(url, result):
+    if result['status'] == STATUS_TIMEOUTERROR:
+        return
+
+    variants = result['variants']
     if variants:
         first_sku = list(variants.values())[0]
         docid = first_sku['store'] + '_' + first_sku['prodid']
