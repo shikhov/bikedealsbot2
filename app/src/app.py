@@ -734,7 +734,7 @@ async def errorsMonitor():
         else:
             bad[doc['store']] += 1
 
-    for store in good:
+    for store in set(list(good) + list(bad)):
         if not STORES[store]['active']: continue
         good_count = good[store]
         bad_count = bad[store]
