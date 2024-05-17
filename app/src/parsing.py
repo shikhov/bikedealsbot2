@@ -229,19 +229,32 @@ async def parseBC(url, httptimeout):
                 content = await response.text()
                 url = str(response.url)
 
-        matches = re.search(r'({\"@context\":\"https:\\/\\/schema\.org\",\"@type\":\"Product\".+?})</script>', content, re.DOTALL)
+        def findVariants(tag):
+            return tag.name == 'script' and tag.get('type') == 'application/ld+json'
+
+        soup = BeautifulSoup(content, 'lxml')
+        res = soup.find_all(findVariants)
+        jsdata = {}
+        for x in res:
+            jsdata = json.loads(x.text)
+            if isinstance(jsdata, list):
+                break
+
+        for x in jsdata:
+            if x['@type'] == 'Product':
+                jsdata = x
+                break
+
         variants = {}
-        jsdata = json.loads(matches.group(1))
-        skus = jsdata['offers']
-        for sku in skus:
+        for sku in jsdata['offers']:
             skuid = sku['sku'].replace(str(jsdata['sku']), '').replace('-', '')
             variants[skuid] = {}
             variants[skuid]['variant'] = sku['name'].replace('\/', '/')
             variants[skuid]['prodid'] = str(jsdata['sku'])
-            variants[skuid]['price'] = int(sku['priceSpecification']['price'])
-            if 'True' in sku['priceSpecification']['valueAddedTaxIncluded']:
-                variants[skuid]['price'] = int(sku['priceSpecification']['price']*0.84)
-            variants[skuid]['currency'] = sku['priceSpecification']['priceCurrency']
+            variants[skuid]['price'] = int(sku['priceSpecification'][0]['price'])
+            if 'True' in sku['priceSpecification'][0]['valueAddedTaxIncluded']:
+                variants[skuid]['price'] = int(sku['priceSpecification'][0]['price']*0.84)
+            variants[skuid]['currency'] = sku['priceSpecification'][0]['priceCurrency']
             variants[skuid]['store'] = 'BC'
             variants[skuid]['url'] = url
             variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
