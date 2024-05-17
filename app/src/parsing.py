@@ -157,8 +157,9 @@ async def parseB24(url, httptimeout):
 
 
 async def parseTI(url, httptimeout):
+    id_pais = 164
     headers = {
-        'Cookie': 'id_pais=164',
+        'Cookie': f'id_pais={id_pais}',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
         'Host': 'www.tradeinn.com',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -168,82 +169,49 @@ async def parseTI(url, httptimeout):
     timeout = ClientTimeout(total=httptimeout)
     url = url.replace(chr(160), '')
     url = urllib.parse.quote(url, safe=':/')
+
     try:
         async with ClientSession(headers=headers, timeout=timeout) as session:
             async with session.get(url) as response:
-                content = await response.text()
                 url = str(response.url)
 
         rg = re.search(r'(https://www\.tradeinn\.com/)(.+?)/(.+?)(/\S+/)(\d+)/p', url)
         url = rg.group(1) + 'bikeinn/en' + rg.group(4) + rg.group(5) + '/p'
         prodid = rg.group(5)
-
-        soup = BeautifulSoup(content, 'lxml')
-
-        id_tienda = soup.find('input', {'name': 'id_tienda'}).get('value')
-        jsurl = f'https://www.tradeinn.com/index.php?action=get_datos_producto&id_tienda={id_tienda}&id_modelo={prodid}&solo_altas=1&idioma=eng&ajax=1'
+        jsurl = f'https://dc.tradeinn.com/{prodid}'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.8,ru;q=0.5,ru-RU;q=0.3',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': url,
+            'Origin': 'https://www.tradeinn.com'
+        }
 
         async with ClientSession(headers=headers, timeout=timeout) as session:
             async with session.get(jsurl) as response:
                 jscontent = await response.text()
 
-        jsdata = json.loads(jscontent)
-        outofstock = True
-        for product in jsdata['id_productes']:
-            if product['precio_win'] > 0:
-                outofstock = False
-                break
-
-        if outofstock: raise Exception
-
-        res = soup.find_all('h1', {'class': 'productName'})
-        name = res[0].string
-
-        def findVariants(tag):
-            return tag.parent.get('id') == 'tallas_detalle'
-
-        res = soup.find_all(findVariants)
-        if not res: raise Exception
-
-        varnames = {}
-        for child in res:
-            varid = child['value']
-            varnames[varid] = child.string
-
-        res = soup.find_all(itemtype='http://schema.org/Offer')
-        if not res: raise Exception
-
+        jsdata = json.loads(jscontent)['_source']
+        name = jsdata['marca'] + ' ' + jsdata['model']['eng']
         variants = {}
-        for x in res:
-            skuid = None
-            price = None
-            instock = None
-            currency = None
+        for var in jsdata['productes']:
+            if not var['sellers']: continue
+            prices = {x['id_pais']: x['precio'] for s in var['sellers'] for x in s['precios_paises']}
+            if id_pais not in prices: continue
 
-            for child in x.children:
-                if not isinstance(child, Tag): continue
-                if child.get('itemprop') == 'sku':
-                    skuid = child['content']
-                if child.get('itemprop') == 'price':
-                    price = child['content']
-                if child.get('itemprop') == 'availability':
-                    instock = child['href'] == 'http://schema.org/InStock'
-                if child.get('itemprop') == 'priceCurrency':
-                    currency = child['content']
-
-            if not (skuid and price and instock and currency): continue
-            if skuid not in varnames: continue
-            if price == '0': continue
-
+            skuid = var['id_producte']
             variants[skuid] = {}
-            variants[skuid]['variant'] = varnames[skuid]
+            varname = [var['talla'], var['talla2'], var['color']]
+            variants[skuid]['variant'] = ' '.join(filter(None, varname))
             variants[skuid]['prodid'] = prodid
-            variants[skuid]['price'] = int(float(price))
-            variants[skuid]['currency'] = currency
+            variants[skuid]['price'] = int(prices[id_pais])
+            variants[skuid]['currency'] = 'RUB'
             variants[skuid]['store'] = 'TI'
             variants[skuid]['url'] = url
             variants[skuid]['name'] = name
-            variants[skuid]['instock'] = instock
+            variants[skuid]['instock'] = True
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
