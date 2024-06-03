@@ -203,8 +203,8 @@ async def parseTI(url, httptimeout):
 
             skuid = var['id_producte']
             variants[skuid] = {}
-            varname = [var['talla'], var['talla2'], var['color']]
-            variants[skuid]['variant'] = ' '.join(filter(None, varname))
+            varname = filter(None, [var['talla'], var['talla2'], var['color']])
+            variants[skuid]['variant'] = ' '.join(varname)
             variants[skuid]['prodid'] = prodid
             variants[skuid]['price'] = int(prices[id_pais])
             variants[skuid]['currency'] = 'RUB'
