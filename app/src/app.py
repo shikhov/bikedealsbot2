@@ -240,7 +240,6 @@ async def processURLMsg(message: Message):
         return
 
     await showVariants(store, url, str(message.from_user.id), message.message_id)
-    return
 
 
 def processURL(store, text):
