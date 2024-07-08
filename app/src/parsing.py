@@ -268,15 +268,11 @@ async def parseBC(url, httptimeout):
 
 
 async def parseBD(url, httptimeout):
-    headers = {
-        'User-Agent': 'Mozilla/5.0'
-    }
-    timeout = ClientTimeout(total=httptimeout)
     try:
-        async with ClientSession(headers=headers, timeout=timeout) as session:
-            async with session.get(url) as response:
-                content = await response.text()
-                url = str(response.url)
+        async with curl.AsyncSession() as session:
+            response = await session.get(url, impersonate='safari15_5', timeout=httptimeout)
+            content = response.text
+            url = response.url
 
         matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
         if not matches:
