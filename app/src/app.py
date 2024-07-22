@@ -452,9 +452,15 @@ async def showVariants(store, url, chat_id, message_id):
 
 
 async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
+    user = db.users.find_one({'_id': chat_id})
+    if not user:
+        await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
+        return
+
+    maxitems = user.get('maxitems', MAXITEMSPERUSER)
     query = {'chat_id': chat_id}
-    if db.sku.count_documents(query) >= MAXITEMSPERUSER:
-        await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {MAXITEMSPERUSER} позиций', chat_id, message_id, msgtype)
+    if db.sku.count_documents(query) >= maxitems:
+        await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', chat_id, message_id, msgtype)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
