@@ -249,7 +249,8 @@ async def parseBC(url, httptimeout):
                     variants[skuid] = {}
                     variants[skuid]['variant'] = sku['name'].replace('\/', '/')
                     variants[skuid]['prodid'] = str(x['sku'])
-                    ps = sku['priceSpecification'][0]
+                    psdict = {p['priceType']: p for p in sku['priceSpecification']}
+                    ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
                     variants[skuid]['price'] = int(ps['price'])
                     if 'True' in ps['valueAddedTaxIncluded']:
                         variants[skuid]['price'] = int(ps['price']*0.84)
@@ -267,7 +268,8 @@ async def parseBC(url, httptimeout):
                     variants[skuid] = {}
                     variants[skuid]['variant'] = sku['name'].replace('\/', '/')
                     variants[skuid]['prodid'] = str(x['productGroupID'])
-                    ps = sku['offers']['priceSpecification'][0]
+                    psdict = {p['priceType']: p for p in sku['offers']['priceSpecification']}
+                    ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
                     variants[skuid]['price'] = int(ps['price'])
                     if 'True' in ps['valueAddedTaxIncluded']:
                         variants[skuid]['price'] = int(ps['price']*0.84)
