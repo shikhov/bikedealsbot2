@@ -235,6 +235,7 @@ async def parseBC(url, httptimeout):
         soup = BeautifulSoup(content, 'lxml')
         res = soup.find_all(findVariants)
         jsdata = {}
+        variants = {}
         for x in res:
             jsdata = json.loads(x.text)
             if isinstance(jsdata, list):
@@ -242,23 +243,40 @@ async def parseBC(url, httptimeout):
 
         for x in jsdata:
             if x['@type'] == 'Product':
-                jsdata = x
+                skus = x['offers']
+                for sku in skus:
+                    skuid = sku['sku'].replace(str(x['sku']), '').replace('-', '')
+                    variants[skuid] = {}
+                    variants[skuid]['variant'] = sku['name'].replace('\/', '/')
+                    variants[skuid]['prodid'] = str(x['sku'])
+                    ps = sku['priceSpecification'][0]
+                    variants[skuid]['price'] = int(ps['price'])
+                    if 'True' in ps['valueAddedTaxIncluded']:
+                        variants[skuid]['price'] = int(ps['price']*0.84)
+                    variants[skuid]['currency'] = ps['priceCurrency']
+                    variants[skuid]['store'] = 'BC'
+                    variants[skuid]['url'] = url
+                    variants[skuid]['name'] = (x['brand']['name'] + ' ' + x['name'].replace('\/', '/'))
+                    variants[skuid]['instock'] = 'InStock' in sku['availability']
                 break
 
-        variants = {}
-        for sku in jsdata['offers']:
-            skuid = sku['sku'].replace(str(jsdata['sku']), '').replace('-', '')
-            variants[skuid] = {}
-            variants[skuid]['variant'] = sku['name'].replace('\/', '/')
-            variants[skuid]['prodid'] = str(jsdata['sku'])
-            variants[skuid]['price'] = int(sku['priceSpecification'][0]['price'])
-            if 'True' in sku['priceSpecification'][0]['valueAddedTaxIncluded']:
-                variants[skuid]['price'] = int(sku['priceSpecification'][0]['price']*0.84)
-            variants[skuid]['currency'] = sku['priceSpecification'][0]['priceCurrency']
-            variants[skuid]['store'] = 'BC'
-            variants[skuid]['url'] = url
-            variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
-            variants[skuid]['instock'] = 'InStock' in sku['availability']
+            if x['@type'] == 'ProductGroup':
+                skus = x['hasVariant']
+                for sku in skus:
+                    skuid = sku['sku'].replace(str(x['productGroupID']), '').replace('-', '')
+                    variants[skuid] = {}
+                    variants[skuid]['variant'] = sku['name'].replace('\/', '/')
+                    variants[skuid]['prodid'] = str(x['productGroupID'])
+                    ps = sku['offers']['priceSpecification'][0]
+                    variants[skuid]['price'] = int(ps['price'])
+                    if 'True' in ps['valueAddedTaxIncluded']:
+                        variants[skuid]['price'] = int(ps['price']*0.84)
+                    variants[skuid]['currency'] = ps['priceCurrency']
+                    variants[skuid]['store'] = 'BC'
+                    variants[skuid]['url'] = url
+                    variants[skuid]['name'] = (x['brand']['name'] + ' ' + x['name'].replace('\/', '/'))
+                    variants[skuid]['instock'] = 'InStock' in sku['offers']['availability']
+                break
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
