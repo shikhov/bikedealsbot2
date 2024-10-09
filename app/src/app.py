@@ -289,7 +289,7 @@ async def processCmdAdd(message: Message):
 @dp.message_handler(regexp_commands=[r'^/del_\w+_\w+_\w+$'], chat_type='private')
 async def processCmdDel(message: Message):
     chat_id = str(message.from_user.id)
-    docid = chat_id + '_' + message.text.replace('/del_', '').upper()
+    docid = message.text.replace('/del', chat_id).upper()
     query = {'_id': docid}
     if db.sku.delete_one(query).deleted_count == 1:
         await message.answer('Удалено')
