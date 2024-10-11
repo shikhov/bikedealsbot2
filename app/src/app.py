@@ -651,8 +651,7 @@ async def notify():
                 addMsg('✅ Снова в наличии!\n' + skustring)
             if not doc['instock']:
                 addMsg('🚫 Не в наличии\n' + skustring)
-
-        if doc['price_prev'] is not None and doc['instock']:
+        elif doc['price_prev'] is not None and doc['instock']:
             skustring = getSkuString(doc, ['store', 'url', 'price', 'price_prev'])
             if doc['price'] < doc['price_prev']:
                 addMsg('📉 Снижение цены!\n' + skustring)
