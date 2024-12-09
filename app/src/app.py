@@ -9,7 +9,7 @@ from collections import defaultdict
 from aiogram import Bot, Dispatcher, executor
 from aiogram.types import Message
 from aiogram.dispatcher.middlewares import BaseMiddleware
-from aiogram.utils import exceptions
+from aiogram.utils.exceptions import BotBlocked, UserDeactivated
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 from pymongo import MongoClient, UpdateOne
@@ -175,7 +175,7 @@ async def broadcast(message: Message, text, docs):
             await bot.send_message(chat_id=doc['_id'], text=text)
             doc['broadcasts'].append(text_hash)
             db.users.update_one({'_id': doc['_id']}, {'$set': doc})
-        except (exceptions.BotBlocked, exceptions.UserDeactivated):
+        except (BotBlocked, UserDeactivated):
             disableUser(doc['_id'])
         await asyncio.sleep(0.1)
 
@@ -569,7 +569,7 @@ async def removeInvalidSKU():
     for chat_id in messages:
         try:
             await paginatedTgMsg(messages[chat_id], chat_id)
-        except (exceptions.BotBlocked, exceptions.UserDeactivated):
+        except (BotBlocked, UserDeactivated):
             disableUser(chat_id)
         await asyncio.sleep(0.1)
 
@@ -674,7 +674,7 @@ async def notify():
     for chat_id in messages:
         try:
             await paginatedTgMsg(messages[chat_id], chat_id)
-        except (exceptions.BotBlocked, exceptions.UserDeactivated):
+        except (BotBlocked, UserDeactivated):
             disableUser(chat_id)
         if DEBUG and LOGCHATID:
             await paginatedTgMsg(messages[chat_id], LOGCHATID)
