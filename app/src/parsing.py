@@ -392,3 +392,37 @@ async def parseCRC(url, httptimeout):
         return {'status': STATUS_TIMEOUTERROR, 'variants': None}
     except Exception:
         return {'status': STATUS_PARSINGERROR, 'variants': None}
+
+
+async def parseA4C(url, httptimeout):
+    headers = {}
+    timeout = ClientTimeout(total=httptimeout)
+    try:
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
+
+        prodid = str(crc32.new(url.encode('utf-8')).crcValue)
+        matches = re.search(r'variants: (.+?)};(.*)?</script>', content, re.DOTALL)
+        jsraw = matches.group(1).rstrip().rstrip(',')
+        jsraw = '{"variants": ' + jsraw + '}'
+        jsdata = json.loads(jsraw)
+        variants = {}
+        for x in jsdata['variants']:
+            skuid = str(crc16.new(str(x['id']).encode('utf-8')).crcValue)
+            variants[skuid] = {}
+            variants[skuid]['variant'] = x['title']
+            variants[skuid]['prodid'] = prodid
+            variants[skuid]['price'] = int(x['price']/100)
+            variants[skuid]['currency'] = 'EUR'
+            variants[skuid]['store'] = 'A4C'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = x['name'].split(' - ')[0]
+            variants[skuid]['instock'] = x['available']
+
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}

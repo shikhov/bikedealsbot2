@@ -273,6 +273,11 @@ def processURL(store, text):
         if rg:
             return rg.group(1) + 'en' + rg.group(3)
 
+    if store == 'A4C':
+        rg = re.search(r'https://www.all4cycling.com/(.+?/)?products/([^?]+)', text)
+        if rg:
+            return 'https://www.all4cycling.com/en/products/' + rg.group(2)
+
     return None
 
 
