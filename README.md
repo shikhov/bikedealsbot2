@@ -6,6 +6,7 @@
 * bike-discount.de
 * tradeinn.com
 * bike24.com
+* all4cycling.com
 
 ## Реализация
 * Python 3.10+
