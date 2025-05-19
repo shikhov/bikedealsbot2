@@ -4,7 +4,7 @@ import urllib.parse
 
 import crcmod.predefined
 from aiohttp import ClientSession, ClientTimeout
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from curl_cffi import requests as curl
 
 from app import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
@@ -420,6 +420,41 @@ async def parseA4C(url, httptimeout):
             variants[skuid]['url'] = url
             variants[skuid]['name'] = x['name'].split(' - ')[0]
             variants[skuid]['instock'] = x['available']
+
+        return {'status': STATUS_OK, 'variants': variants}
+    except TimeoutError:
+        return {'status': STATUS_TIMEOUTERROR, 'variants': None}
+    except Exception:
+        return {'status': STATUS_PARSINGERROR, 'variants': None}
+
+
+async def parseLG(url, httptimeout):
+    headers = {}
+    timeout = ClientTimeout(total=httptimeout)
+    try:
+        async with ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url) as response:
+                content = await response.text()
+                url = str(response.url)
+
+        def findData(tag):
+            return tag.name == 'article' and tag.get('id') == 'product-new'
+
+        soup = BeautifulSoup(content, 'lxml')
+        res = soup.find_all(findData)
+        jsdata = json.loads(res[0]['data-json'])
+        variants = {}
+        for x in jsdata['options']:
+            skuid = str(x['sourceId'])
+            variants[skuid] = {}
+            variants[skuid]['variant'] = (', ').join(sorted(x['attributes'].values()))
+            variants[skuid]['prodid'] = str(jsdata['originId'])
+            variants[skuid]['price'] = int(x['price']['price0'])
+            variants[skuid]['currency'] = 'USD'
+            variants[skuid]['store'] = 'LG'
+            variants[skuid]['url'] = url
+            variants[skuid]['name'] = jsdata['title']
+            variants[skuid]['instock'] = x['quantity'] > 0
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
