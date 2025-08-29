@@ -14,15 +14,11 @@ crc32 = crcmod.predefined.Crc('crc-32')
 
 
 async def parseSB(url, httptimeout):
-    headers = {
-        'Cookie': 'country=KZ; currency_relaunch=EUR; vat=hide'
-    }
-    timeout = ClientTimeout(total=httptimeout)
     try:
-        async with ClientSession(headers=headers, timeout=timeout) as session:
-            async with session.get(url) as response:
-                content = await response.text()
-                url = str(response.url)
+        async with curl.AsyncSession() as session:
+            response = await session.get(url, impersonate='safari15_5', timeout=httptimeout)
+            content = response.text
+            url = response.url
 
         soup = BeautifulSoup(content, 'lxml')
         prodid = str(crc32.new(url.encode('utf-8')).crcValue)
