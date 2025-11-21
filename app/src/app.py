@@ -182,6 +182,24 @@ async def broadcast(message: Message, text, docs):
     await message.answer('🔴 Окончание рассылки')
 
 
+@dp.message_handler(commands='users', chat_id=ADMINCHATID)
+async def processCmdUpdateUsers(message: Message):
+    docs = db.users.find({'enable': True})
+    await message.answer('🟢 Начало обновления списка пользователей')
+
+    for count, doc in enumerate(docs, start=1):
+        if count % 100 == 0:
+            await message.answer('Обработано: ' + str(count))
+        
+        try:
+            await bot.send_chat_action(chat_id=doc['_id'], action='typing')
+        except (BotBlocked, UserDeactivated):
+            disableUser(doc['_id'])
+        await asyncio.sleep(0.1)
+
+    await message.answer('🔴 Окончание обновления списка пользователей')
+
+
 @dp.message_handler(commands='bc', chat_id=ADMINCHATID)
 async def processCmdBroadcast(message: Message):
     text = message.get_args()
