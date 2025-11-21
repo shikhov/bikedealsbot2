@@ -172,7 +172,7 @@ async def broadcast(message: Message, text, docs):
         if text_hash in doc.setdefault('broadcasts', []): continue
 
         try:
-            await bot.send_message(chat_id=doc['_id'], text=text)
+            await bot.send_message(chat_id=doc['_id'], text=text, parse_mode='HTML')
             doc['broadcasts'].append(text_hash)
             db.users.update_one({'_id': doc['_id']}, {'$set': doc})
         except (BotBlocked, UserDeactivated):
@@ -202,7 +202,7 @@ async def processCmdUpdateUsers(message: Message):
 
 @dp.message_handler(commands='bc', chat_id=ADMINCHATID)
 async def processCmdBroadcast(message: Message):
-    text = message.get_args()
+    text = message.html_text.replace('/bc', '', 1).strip()
     docs = db.users.find({'enable': True})
     await broadcast(message, text, docs)
 
