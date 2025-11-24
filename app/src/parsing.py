@@ -14,9 +14,12 @@ crc32 = crcmod.predefined.Crc('crc-32')
 
 
 async def parseSB(url, httptimeout):
+    headers = {
+        'Cookie': 'country=RU; currency_relaunch=EUR; vat=hide'
+    }
     try:
         async with curl.AsyncSession() as session:
-            response = await session.get(url, impersonate='safari15_5', timeout=httptimeout)
+            response = await session.get(url, impersonate='safari15_5', timeout=httptimeout, headers=headers)
             content = response.text
             url = response.url
 
