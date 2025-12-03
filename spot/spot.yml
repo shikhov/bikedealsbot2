@@ -1,18 +1,41 @@
 ssh_key: /home/user44/id_rsa
 inventory: inventory/inventory.yml
 
-targets: ["default"]
+tasks:
+  - name: deploy
+    targets: ["default"]
+    commands:
+      - name: Sync src folder
+        sync: {src: "../app", dst: "$appname$target", delete: true}
 
-task:
-    - name: Sync src folder
-      sync: {src: "../app", dst: "$appname$target", delete: true}
+      - name: Copy config
+        copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
 
-    - name: Copy config
-      copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
+      - name: Docker build and start
+        script: |
+          docker build $appname$target -t $appname$target-image
+          docker stop $appname$target || true
+          docker rm $appname$target || true
+          docker run -d -p $port:$port --network reproxy -e HOST=$host -e APP_NAME=$appname$target -e PORT=$port --name $appname$target --restart=on-failure $appname$target-image
 
-    - name: Docker build and start
-      script: |
-        docker build $appname$target -t $appname$target-image
-        docker stop $appname$target || true
-        docker rm $appname$target || true
-        docker run -d --name $appname$target --restart=on-failure $appname$target-image
+
+  - name: debug_sync
+    commands:
+      - name: Sync src folder
+        sync: {src: "../app", dst: "$appname$target", delete: false}
+
+      # - name: Copy config
+      #   copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
+
+
+  - name: debug_sync_restart
+    commands:
+      - name: Sync src folder
+        sync: {src: "../app", dst: "$appname$target", delete: false}
+
+      - name: Copy config
+        copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
+
+      - name: Docker build and start
+        script: |
+          docker restart bdbot2_debug || true

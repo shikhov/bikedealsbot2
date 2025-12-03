@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js?1"></script>
+    <style>
+     :root {
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+            --modal-overlay: rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            /* font-family: Roboto, Helvetica, Arial, sans-serif; */
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header { margin-bottom: 20px; }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin: 0;
+            color: #111827;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            margin-top: 5px;
+            font-size: 0.95rem;
+        }
+
+        .list-container {
+            flex-grow: 1;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .item-row {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Класс для анимации удаления */
+        .item-row.fade-out {
+            opacity: 0;
+            transform: translateX(100px);
+            max-height: 0;
+            margin: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            border: none;
+        }
+
+        .item-row:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .item-row.fade-out:hover {
+            transform: translateX(100px);
+            box-shadow: none;
+        }
+
+        .item-row input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 20px;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        .item-name {
+            font-size: 15px;
+            font-weight: 500;
+            flex-grow: 1;
+            user-select: none;
+        }
+        .item-var {
+            font-size: 15px;
+        }
+
+        .actions-panel {
+            position: sticky;
+            bottom: 20px;
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+            z-index: 10;
+        }
+
+        button#deleteTriggerBtn {
+            background-color: var(--danger-color);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);
+            transition: all 0.2s;
+        }
+
+        button#deleteTriggerBtn:hover {
+            background-color: var(--danger-hover);
+            box-shadow: 0 6px 8px rgba(220, 38, 38, 0.3);
+            transform: translateY(-1px);
+        }
+
+        button#deleteTriggerBtn:disabled {
+            background-color: #d1d5db; /* Серый цвет */
+            color: #9ca3af; /* Текст тусклее */
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--modal-overlay);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: scale(1);
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+
+        .modal-text {
+            color: #4b5563;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn-modal {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+
+        .btn-cancel {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .btn-cancel:hover { background-color: #d1d5db; }
+
+        .btn-confirm {
+            background-color: var(--danger-color);
+            color: white;
+        }
+        .btn-confirm:hover { background-color: var(--danger-hover); }
+
+        .item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="list-container" id="itemsList">
+        <div class="empty-state">Загрузка данных...</div>
+    </div>
+
+    <div class="actions-panel">
+        <button id="deleteTriggerBtn" onclick="openConfirmationModal()" disabled>Удалить выбранные</button>
+    </div>
+
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal-card">
+            <div class="modal-title">Подтверждение удаления</div>
+            <div class="modal-text">
+                Вы действительно хотите удалить <strong id="countToDelete">0</strong> элемент(а/ов)?
+            </div>
+            <div class="modal-actions">
+                <button class="btn-modal btn-cancel" onclick="closeModal()">Отмена</button>
+                <button class="btn-modal btn-confirm" id="confirmDeleteBtn" onclick="executeDelete()">Да, удалить</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        Telegram.WebApp.ready();
+        var initData = Telegram.WebApp.initData || '';
+        var data;
+        var url = new URL(window.location.href);
+        var API_URL = url.protocol + '//' + url.hostname + '/' + url.pathname.split('/').at(1) + '/api';
+
+        async function loadItems() {
+            const listContainer = document.getElementById('itemsList');
+            try {
+                const response = await fetch(`${API_URL}/list`,
+                {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({'_auth': initData}),
+                });
+                if (!response.ok) throw new Error('Ошибка сети');
+                const data = await response.json();
+                renderList(data);
+            } catch (error) {
+                console.error('Ошибка:', error);
+                listContainer.innerHTML = `<div class="empty-state" style="color: var(--danger-color);">Ошибка загрузки: ${error.message}</div>`;
+            }
+        }
+
+        function renderList(items) {
+            const listContainer = document.getElementById('itemsList');
+            listContainer.innerHTML = ''; 
+
+            if (items.length === 0) {
+                listContainer.innerHTML = '<div class="empty-state">Список пуст</div>';
+                updateDeleteButtonState();
+                return;
+            }
+
+            items.forEach(item => {                
+                const label = document.createElement('label');
+                label.className = 'item-row';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.dataset.code = item.code;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'item-name';
+                nameSpan.textContent = item.name; 
+
+                const varSpan = document.createElement('span');
+                varSpan.className = 'item-var';
+                varSpan.textContent = item.variant; 
+
+                const div = document.createElement('div');
+                div.className = 'item-info';
+                div.appendChild(nameSpan);
+                div.appendChild(varSpan);
+
+                label.appendChild(checkbox);
+                label.appendChild(div);
+                
+                listContainer.appendChild(label);
+            });
+
+            updateDeleteButtonState();
+        }
+
+        function updateDeleteButtonState() {
+            const checkedCount = document.querySelectorAll('.item-row input[type="checkbox"]:checked').length;
+            const btn = document.getElementById('deleteTriggerBtn');
+            btn.disabled = checkedCount === 0;
+        }
+
+        document.getElementById('itemsList').addEventListener('change', function(event) {
+            if (event.target.type === 'checkbox') {
+                updateDeleteButtonState();
+            }
+        });
+
+        function openConfirmationModal() {
+            const checkboxes = document.querySelectorAll('.item-row input[type="checkbox"]:checked');
+            itemsToDeleteData = Array.from(checkboxes).map(cb => cb.dataset.code);
+            document.getElementById('countToDelete').innerText = itemsToDeleteData.length;
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('confirmModal').classList.remove('active');
+            itemsToDeleteData = [];
+        }
+
+        async function executeDelete() {
+            const confirmBtn = document.getElementById('confirmDeleteBtn');
+            const originalText = confirmBtn.innerText;
+            
+            confirmBtn.innerText = "Удаление...";
+            confirmBtn.disabled = true;
+
+            const jsonData = {};
+            jsonData['_auth'] = initData;
+            jsonData['items'] = itemsToDeleteData;
+
+            try {
+                const response = await fetch(`${API_URL}/delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonData)
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    const checkboxes = document.querySelectorAll('.item-row input[type="checkbox"]:checked');                    
+                    checkboxes.forEach(cb => {                        
+                        const row = cb.closest('.item-row');
+                        if (row) {
+                            row.classList.add('fade-out');
+                            cb.checked = false;
+                            
+                            row.remove();
+                            checkEmptyState();
+                        }
+                    });
+                    updateDeleteButtonState();
+
+                } else {
+                    alert("Ошибка при удалении на сервере");
+                    closeModal();
+                }
+            } catch (error) {
+                console.error("Ошибка:", error);
+                alert("Нет соединения с сервером");
+                closeModal();
+            } finally {
+                confirmBtn.innerText = originalText;
+                confirmBtn.disabled = false;
+            }
+        }
+
+        function checkEmptyState() {
+            const listContainer = document.getElementById('itemsList');
+            const remainingItems = listContainer.querySelectorAll('.item-row:not(.fade-out)');            
+            if (remainingItems.length === 0) {                
+                setTimeout(() => {
+                    if (listContainer.children.length === 0) {
+                        listContainer.innerHTML = '<div class="empty-state">Список пуст</div>';
+                    }
+                }, 100);
+            }
+        }
+
+        document.getElementById('confirmModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        loadItems();
+    </script>
+</body>
+</html>

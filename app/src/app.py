@@ -1,24 +1,37 @@
 import asyncio
 import logging
 import re
+import os
 from hashlib import md5
 from datetime import datetime
 from time import time
 from collections import defaultdict
 from typing import Callable, Dict, Any, Awaitable
 
-from aiogram.enums import ChatType, ParseMode
 from aiogram import Bot, Dispatcher, F, BaseMiddleware
-from aiogram.types import Message
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, CommandStart, BaseFilter
 from aiogram.client.default import DefaultBotProperties
+from aiogram.types import (
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
 from pymongo import AsyncMongoClient, UpdateOne
+from aiohttp import web
+from webapp.routes import list_handler, api_list_handler, api_delete_handler
 
 import parsing
 
 from config import CONNSTRING, DBNAME
+
+APP_NAME = os.getenv('APP_NAME')
+HOST = os.getenv('HOST')
+PORT = os.getenv('PORT')
+APP_BASE_URL = f'https://{HOST}/{APP_NAME}'
 
 STATUS_OK = 0
 STATUS_TIMEOUTERROR = 1
@@ -390,6 +403,21 @@ async def processCmdList(message: Message):
         text_array = ['Ваш список пуст']
 
     await paginatedTgMsg(text_array, chat_id)
+
+
+@dp.message(Command('list_web'))
+async def command_list_web(message: Message):
+    kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text='Открыть', web_app=WebAppInfo(url=f'{APP_BASE_URL}/list/'))
+                ]
+            ]
+    )
+    await message.answer(
+        'Нажмите кнопку ниже, чтобы открыть веб-интерфейс для управления отслеживаемыми товарами:',
+        reply_markup=kb
+    )
 
 
 @dp.message(Command('stat'), IsAdmin())
@@ -828,6 +856,16 @@ async def errorsMonitor():
             await bot.send_message(ADMINCHATID, f'Problem with {store}!\nGood: {good_count}\nBad: {bad_count}')
 
 
+def create_webapp_server():
+    app = web.Application()
+    app.router.add_get('/list/', list_handler)
+    app.router.add_post('/api/list', api_list_handler)
+    app.router.add_post('/api/delete', api_delete_handler)
+    app.add_routes([web.static('/static', 'webapp/static')])
+    
+    return app
+
+
 async def main():
     # settings
     await loadSettings()
@@ -836,6 +874,16 @@ async def main():
     global bot
     botProperties = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
     bot = Bot(token=TOKEN, default=botProperties)
+
+    web_app = create_webapp_server()
+    web_app['bot'] = bot
+    web_app['db'] = db
+    web_app['ADMINCHATID'] = ADMINCHATID
+    web_runner = web.AppRunner(web_app)
+    await web_runner.setup()
+    site = web.TCPSite(web_runner, '0.0.0.0', int(PORT))
+    await site.start()
+
     scheduler = AsyncIOScheduler(job_defaults={'misfire_grace_time': None})
     scheduler.start()
 
