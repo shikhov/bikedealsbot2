@@ -298,22 +298,23 @@
                 checkbox.type = 'checkbox';
                 checkbox.dataset.code = item.code;
 
+                const div = document.createElement('div');
+                div.className = 'item-info';
+
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'item-name';
                 nameSpan.textContent = item.name; 
-
-                const varSpan = document.createElement('span');
-                varSpan.className = 'item-var';
-                varSpan.textContent = item.variant; 
-
-                const div = document.createElement('div');
-                div.className = 'item-info';
                 div.appendChild(nameSpan);
-                div.appendChild(varSpan);
+
+                if (item.variant && item.variant.trim() !== '') {
+                    const varSpan = document.createElement('span');
+                    varSpan.className = 'item-var';
+                    varSpan.textContent = item.variant; 
+                    div.appendChild(varSpan);
+                }
 
                 label.appendChild(checkbox);
                 label.appendChild(div);
-                
                 listContainer.appendChild(label);
             });
 

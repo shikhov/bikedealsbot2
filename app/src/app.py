@@ -861,7 +861,7 @@ def create_webapp_server():
     app.router.add_get('/list/', list_handler)
     app.router.add_post('/api/list', api_list_handler)
     app.router.add_post('/api/delete', api_delete_handler)
-    app.add_routes([web.static('/static', 'webapp/static')])
+    # app.add_routes([web.static('/static', 'webapp/static')])
     
     return app
 
