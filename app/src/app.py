@@ -5,14 +5,16 @@ from hashlib import md5
 from datetime import datetime
 from time import time
 from collections import defaultdict
+from typing import Callable, Dict, Any, Awaitable
 
-from aiogram import Bot, Dispatcher, executor
+from aiogram.enums import ChatType, ParseMode
+from aiogram import Bot, Dispatcher, F, BaseMiddleware
 from aiogram.types import Message
-from aiogram.dispatcher.middlewares import BaseMiddleware
-from aiogram.utils.exceptions import BotBlocked, UserDeactivated
+from aiogram.filters import Command, CommandStart, BaseFilter
+from aiogram.client.default import DefaultBotProperties
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
-from pymongo import MongoClient, UpdateOne
+from pymongo import AsyncMongoClient, UpdateOne
 
 import parsing
 
@@ -22,7 +24,13 @@ STATUS_OK = 0
 STATUS_TIMEOUTERROR = 1
 STATUS_PARSINGERROR = 2
 
-db = MongoClient(CONNSTRING).get_database(DBNAME)
+db = AsyncMongoClient(CONNSTRING)[DBNAME]
+
+
+class IsAdmin(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        return message.from_user.id == ADMINCHATID
+
 
 class Product:
     id = None
@@ -61,14 +69,34 @@ class Product:
         return True
 
 
+TOKEN = None
+ADMINCHATID = None
+BESTDEALSCHATID = None
+BESTDEALSMINPERCENTAGE = None
+BESTDEALSWARNPERCENTAGE = None
+BESTDEALSMINVALUE = None
+CACHELIFETIME = None
+ERRORMINTHRESHOLD = None
+ERRORMAXDAYS = None
+MAXITEMSPERUSER = None
+CHECKINTERVAL = None
+LOGCHATID = None
+LOGFILTER = None
+BANNERSTART = None
+BANNERHELP = None
+BANNERDONATE = None
+STORES = None
+DEBUG = None
+HTTPTIMEOUT = None
+REQUESTDELAY = None
 
-def loadSettings():
+async def loadSettings():
     global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
     global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
     global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
     global BANNERDONATE, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY, LOGFILTER
 
-    settings = db.settings.find_one({'_id': 'settings'})
+    settings = await db.settings.find_one({'_id': 'settings'})
 
     TOKEN = settings['TOKEN']
     ADMINCHATID = settings['ADMINCHATID']
@@ -93,39 +121,43 @@ def loadSettings():
 
 
 class LoggingMiddleware(BaseMiddleware):
-    def __init__(self):
-        super(LoggingMiddleware, self).__init__()
-
-    async def on_pre_process_message(self, message: Message, data: dict):
-        if message.text == '/start': return
-        if message.chat.type != 'private': return
-
-        chat_id = str(message.from_user.id)
-        if not db.users.find_one({'_id': chat_id}):
-            data = {
-                '_id': chat_id,
-                'first_name': message.from_user.first_name,
-                'last_name': message.from_user.last_name,
-                'username': message.from_user.username,
-                'enable': True
-            }
-            db.users.insert_one(data)
-
-
-    async def on_post_process_message(self, message: Message, results, data: dict):
-        await logMessage(message)
+    async def __call__(
+        self,
+        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: Dict[str, Any]
+    ) -> Any:
+        if isinstance(event, Message):
+            if event.text != '/start' and event.chat.type == ChatType.PRIVATE:
+                chat_id = str(event.from_user.id)
+                if not await db.users.find_one({'_id': chat_id}):
+                    user_data = {
+                        '_id': chat_id,
+                        'first_name': event.from_user.first_name,
+                        'last_name': event.from_user.last_name,
+                        'username': event.from_user.username,
+                        'enable': True
+                    }
+                    await db.users.insert_one(user_data)
+            
+            result = await handler(event, data)
+            await logMessage(event)
+            return result
+        return await handler(event, data)
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("aiogram.event").setLevel(logging.WARNING) 
 
-# settings
-loadSettings()
+dp = Dispatcher()
+dp.message.middleware(LoggingMiddleware())
 
-# Initialize bot and dispatcher
-bot = Bot(token=TOKEN, parse_mode='HTML')
-dp = Dispatcher(bot)
-dp.middleware.setup(LoggingMiddleware())
+
+async def processException(e: Exception, chat_id: str):
+    error_codes = ['bot was blocked', 'user is deactivated']
+    if e.message and any(code in e.message for code in error_codes):
+        await disableUser(chat_id)
 
 
 async def logMessage(message: Message):
@@ -135,7 +167,7 @@ async def logMessage(message: Message):
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
     logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
-    await bot.send_message(LOGCHATID, logentry, disable_web_page_preview=True)
+    await bot.send_message(LOGCHATID, logentry)
 
 
 def getStoreUrls():
@@ -146,7 +178,7 @@ def getStoreUrls():
     return arr
 
 
-@dp.message_handler(commands='start', chat_type='private')
+@dp.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def processCmdStart(message: Message):
     msg = substituteVars(BANNERSTART)
     await message.answer(msg)
@@ -158,56 +190,61 @@ async def processCmdStart(message: Message):
         'username': message.from_user.username,
         'enable': True
     }
-    db.users.update_one({'_id' : chat_id }, {'$set': data}, upsert=True)
-    db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
+    await db.users.update_one({'_id' : chat_id }, {'$set': data}, upsert=True)
+    await db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
 
 async def broadcast(message: Message, text, docs):
     text_hash = md5(text.encode('utf-8')).hexdigest()
     await message.answer('🟢 Начало рассылки')
 
-    for count, doc in enumerate(docs, start=1):
+    count = 0
+    async for doc in docs:
+        count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
+                
         if text_hash in doc.setdefault('broadcasts', []): continue
 
         try:
-            await bot.send_message(chat_id=doc['_id'], text=text, parse_mode='HTML')
+            await bot.send_message(chat_id=doc['_id'], text=text)
             doc['broadcasts'].append(text_hash)
-            db.users.update_one({'_id': doc['_id']}, {'$set': doc})
-        except (BotBlocked, UserDeactivated):
-            disableUser(doc['_id'])
+            await db.users.update_one({'_id': doc['_id']}, {'$set': doc})
+        except Exception as e:
+            await processException(e, doc['_id'])
         await asyncio.sleep(0.1)
 
     await message.answer('🔴 Окончание рассылки')
 
 
-@dp.message_handler(commands='users', chat_id=ADMINCHATID)
+@dp.message(Command('users'), IsAdmin())
 async def processCmdUpdateUsers(message: Message):
-    docs = db.users.find({'enable': True})
+    cursor = db.users.find({'enable': True})
     await message.answer('🟢 Начало обновления списка пользователей')
 
-    for count, doc in enumerate(docs, start=1):
+    count = 0
+    async for doc in cursor:
+        count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
         
         try:
             await bot.send_chat_action(chat_id=doc['_id'], action='typing')
-        except (BotBlocked, UserDeactivated):
-            disableUser(doc['_id'])
+        except Exception as e:
+            await processException(e, doc['_id'])
         await asyncio.sleep(0.1)
 
     await message.answer('🔴 Окончание обновления списка пользователей')
 
 
-@dp.message_handler(commands='bc', chat_id=ADMINCHATID)
+@dp.message(Command('bc'), IsAdmin())
 async def processCmdBroadcast(message: Message):
     text = message.html_text.replace('/bc', '', 1).strip()
     docs = db.users.find({'enable': True})
     await broadcast(message, text, docs)
 
 
-@dp.message_handler(regexp_commands=[r'^/bc_\w+'], chat_id=ADMINCHATID)
+@dp.message(F.text.regexp(r'^/bc_\w+'), IsAdmin())
 async def processCmdBroadcastByStore(message: Message):
     text = message.get_args()
     params = message.get_command().split('_')
@@ -233,13 +270,13 @@ async def processCmdBroadcastByStore(message: Message):
     await broadcast(message, text, docs)
 
 
-@dp.message_handler(commands='reload', chat_id=ADMINCHATID)
+@dp.message(Command('reload'), IsAdmin())
 async def processCmdReload(message: Message):
-    loadSettings()
+    await loadSettings()
     await message.answer('Settings successfully reloaded')
 
 
-@dp.message_handler(regexp=r'https?://', chat_type='private')
+@dp.message(F.text.regexp(r'https?://', mode='search'), F.chat.type == ChatType.PRIVATE)
 async def processURLMsg(message: Message):
     for store, attrs in STORES.items():
         if re.search(attrs['url_regex'], message.text):
@@ -304,7 +341,7 @@ def processURL(store, text):
     return None
 
 
-@dp.message_handler(regexp_commands=[r'^/add_\w+_\w+_\w+$'], chat_type='private')
+@dp.message(F.text.regexp(r'^/add_\w+_\w+_\w+$'), F.chat.type == ChatType.PRIVATE)
 async def processCmdAdd(message: Message):
     chat_id = str(message.from_user.id)
     params = message.text.split('_')
@@ -314,34 +351,35 @@ async def processCmdAdd(message: Message):
     await addVariant(store, prodid, skuid, chat_id, message.message_id, 'reply')
 
 
-@dp.message_handler(regexp_commands=[r'^/del_\w+_\w+_\w+$'], chat_type='private')
+@dp.message(F.text.regexp(r'^/del_\w+_\w+_\w+$'), F.chat.type == ChatType.PRIVATE)
 async def processCmdDel(message: Message):
     chat_id = str(message.from_user.id)
     docid = message.text.replace('/del', chat_id).upper()
     query = {'_id': docid}
-    if db.sku.delete_one(query).deleted_count == 1:
+    result = await db.sku.delete_one(query)
+    if result.deleted_count == 1:
         await message.answer('Удалено')
         return
     await message.answer('Какая-то ошибка 😧')
 
 
-@dp.message_handler(commands='help', chat_type='private')
+@dp.message(Command('help'), F.chat.type == ChatType.PRIVATE)
 async def processCmdHelp(message: Message):
     msg = substituteVars(BANNERHELP)
     await message.answer(msg)
 
 
-@dp.message_handler(commands='donate', chat_type='private')
+@dp.message(Command('donate'), F.chat.type == ChatType.PRIVATE)
 async def processCmdDonate(message: Message):
     await message.answer(BANNERDONATE)
 
 
-@dp.message_handler(commands='list', chat_type='private')
+@dp.message(Command('list'), F.chat.type == ChatType.PRIVATE)
 async def processCmdList(message: Message):
     text_array = []
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
-    for doc in db.sku.find(query):
+    async for doc in db.sku.find(query):
         key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
         line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
         text_array.append(line)
@@ -354,14 +392,15 @@ async def processCmdList(message: Message):
     await paginatedTgMsg(text_array, chat_id)
 
 
-@dp.message_handler(commands='stat', chat_id=ADMINCHATID)
+@dp.message(Command('stat'), IsAdmin())
 async def processCmdStat(message: Message):
     sent_msg = await message.answer('Getting stat...')
 
-    usersall = db.users.count_documents({})
-    usersactive = db.users.count_documents({'enable': True})
-    skuall = db.sku.count_documents({})
-    docs = db.users.aggregate([
+    usersall = await db.users.count_documents({})
+    usersactive = await db.users.count_documents({'enable': True})
+    skuall = await db.sku.count_documents({})
+    
+    pipeline = [
         {
             '$lookup':
             {
@@ -383,9 +422,16 @@ async def processCmdStat(message: Message):
         {
             '$count': 'count'
         }
-    ])
-    userswsku = docs.next()['count']
-    skuactive = db.sku.count_documents({'enable': True})
+    ]
+    
+    cursor = await db.users.aggregate(pipeline)
+    try:
+        result_list = await cursor.to_list(length=1)
+        userswsku = result_list[0]['count'] if result_list else 0
+    except Exception:
+        userswsku = 0
+        
+    skuactive = await db.sku.count_documents({'enable': True})
 
     msg = ''
     msg += f'<b>Total users:</b> {usersall}\n'
@@ -395,11 +441,11 @@ async def processCmdStat(message: Message):
     msg += f'<b>Active SKU:</b> {skuactive}\n'
 
     for key in STORES.keys():
-        num = db.sku.count_documents({'store': key})
+        num = await db.sku.count_documents({'store': key})
         msg += f'<b>{key}:</b> {num}\n'
 
     TOPNUMBER = 10
-    docs = db.users.aggregate([
+    pipeline_top = [
         {
             '$lookup':
             {
@@ -421,24 +467,25 @@ async def processCmdStat(message: Message):
         {
             '$limit': TOPNUMBER
         }
-    ])
+    ]
+    
     msg += f'\n<b>Top {TOPNUMBER} users:</b>\n'
-    for doc in docs:
+    async for doc in await db.users.aggregate(pipeline_top):
         username = ' (' + doc['username'] + ')' if doc['username'] else ''
         full_name = doc['first_name'] + ' ' + doc['last_name'] if doc['last_name'] else doc['first_name']
         msg += f'{full_name}{username}: {doc["sku_count"]}\n'
 
-    await bot.edit_message_text(text=msg, message_id=sent_msg.message_id, chat_id=message.from_user.id)
+    await sent_msg.edit_text(msg)
 
 
-@dp.message_handler(chat_type='private')
+@dp.message(F.chat.type == ChatType.PRIVATE)
 async def processSearch(message: Message):
     text = message.text
     if not text: return
 
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
-    if db.sku.count_documents(query) == 0:
+    if await db.sku.count_documents(query) == 0:
         await message.answer('⚠️ Ваш список пуст, поиск невозможен')
         return
 
@@ -450,7 +497,7 @@ async def processSearch(message: Message):
 
     query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
     text_array = []
-    for doc in db.sku.find(query):
+    async for doc in db.sku.find(query):
         key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
         line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
         text_array.append(line)
@@ -472,7 +519,7 @@ async def showVariants(store, url, chat_id, message_id):
 
     prod = await getProduct(store, url)
     if prod.var_count == 0:
-        await bot.edit_message_text('Не смог найти цену 😧', chat_id, msg.message_id)
+        await msg.edit_text('Не смог найти цену 😧')
     elif prod.var_count == 1:
         await addVariant(store, prod.id, prod.first_skuid, chat_id, msg.message_id, 'edit')
     elif prod.var_count > 1:
@@ -480,23 +527,23 @@ async def showVariants(store, url, chat_id, message_id):
 
 
 async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
-    user = db.users.find_one({'_id': chat_id})
+    user = await db.users.find_one({'_id': chat_id})
     if not user:
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
 
     maxitems = user.get('maxitems', MAXITEMSPERUSER)
     query = {'chat_id': chat_id}
-    if db.sku.count_documents(query) >= maxitems:
+    if await db.sku.count_documents(query) >= maxitems:
         await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', chat_id, message_id, msgtype)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
-    if db.sku.find_one({'_id': docid}):
+    if await db.sku.find_one({'_id': docid}):
         await sendOrEditMsg('️☝️ Товар уже есть в вашем списке', chat_id, message_id, msgtype)
         return
 
-    url = getURL(store, prodid)
+    url = await getURL(store, prodid)
     if not url:
         await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
         return
@@ -518,14 +565,14 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
     data['lastgoodts'] = int(time())
     data['instock_prev'] = None
     data['price_prev'] = None
-    db.sku.insert_one(data)
+    await db.sku.insert_one(data)
 
     dispname = data['variant'] or data['name']
     await sendOrEditMsg(dispname + '\n✔️ Добавлено к отслеживанию', chat_id, message_id, msgtype)
 
 
-def getURL(store, prodid):
-    doc = db.skucache.find_one({'_id': store + '_' + prodid})
+async def getURL(store, prodid):
+    doc = await db.skucache.find_one({'_id': store + '_' + prodid})
     if doc:
         return doc['url']
     return None
@@ -539,9 +586,9 @@ def substituteVars(text):
 async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
     async def sendOrEditMsg():
         if message_id != 0 and first_page:
-            await bot.edit_message_text(msg, chat_id, message_id, disable_web_page_preview=True)
+            await bot.edit_message_text(text=msg, chat_id=chat_id, message_id=message_id)
         else:
-            await bot.send_message(chat_id, msg, disable_web_page_preview=True)
+            await bot.send_message(chat_id, msg)
 
     first_page = True
     msg = ''
@@ -560,20 +607,20 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
 async def getProduct(store, url):
     tsexpired = int(time()) - CACHELIFETIME * 60
     query = {'url': url, 'timestamp': {'$gt': tsexpired}}
-    doc = db.skucache.find_one(query)
+    doc = await db.skucache.find_one(query)
     if doc:
         return Product(data=doc['variants'], source='cache')
 
     parseFunction = getattr(parsing, 'parse' + store)
     result = await parseFunction(url, HTTPTIMEOUT)
-    cacheVariants(url, result)
+    await cacheVariants(url, result)
     return Product(data=result['variants'], source='web')
 
 
 async def clearSKUCache():
     tsexpired = int(time()) - CACHELIFETIME * 60
     query = {'timestamp': {'$lt': tsexpired}}
-    db.skucache.delete_many(query)
+    await db.skucache.delete_many(query)
 
 
 async def removeInvalidSKU():
@@ -581,19 +628,19 @@ async def removeInvalidSKU():
     tsexpired = int(time()) - ERRORMAXDAYS * 24 * 3600
     query = {'lastgoodts': {'$lt': tsexpired}}
     messages = {}
-    for doc in db.sku.find(query):
-        user = db.users.find_one({'_id': doc['chat_id']})
+    async for doc in db.sku.find(query):
+        user = await db.users.find_one({'_id': doc['chat_id']})
         if not user['enable']: continue
         skustring = getSkuString(doc, ['store', 'url'])
         messages.setdefault(doc['chat_id'], [banner]).append(skustring)
 
-    db.sku.delete_many(query)
+    await db.sku.delete_many(query)
 
     for chat_id in messages:
         try:
             await paginatedTgMsg(messages[chat_id], chat_id)
-        except (BotBlocked, UserDeactivated):
-            disableUser(chat_id)
+        except Exception as e:
+            await processException(e, chat_id)
         await asyncio.sleep(0.1)
 
 
@@ -630,7 +677,7 @@ def getSkuString(sku, options):
     return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip()
 
 
-def cacheVariants(url, result):
+async def cacheVariants(url, result):
     if result['status'] == STATUS_TIMEOUTERROR:
         return
 
@@ -647,7 +694,7 @@ def cacheVariants(url, result):
             'timestamp': int(time()),
             'url': url
     }
-    db.skucache.update_one(query, {'$set': data}, upsert=True)
+    await db.skucache.update_one(query, {'$set': data}, upsert=True)
 
 
 async def notify():
@@ -672,7 +719,7 @@ async def notify():
     bulk_request = []
 
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
-    for doc in db.sku.find(query):
+    async for doc in db.sku.find(query):
         if doc['instock_prev'] is not None:
             skustring = getSkuString(doc, ['store', 'url', 'price'])
             if doc['instock']:
@@ -697,8 +744,8 @@ async def notify():
     for chat_id in messages:
         try:
             await paginatedTgMsg(messages[chat_id], chat_id)
-        except (BotBlocked, UserDeactivated):
-            disableUser(chat_id)
+        except Exception as e:
+            await processException(e, chat_id)
         if DEBUG and LOGCHATID:
             await paginatedTgMsg(messages[chat_id], LOGCHATID)
         await asyncio.sleep(0.1)
@@ -707,21 +754,27 @@ async def notify():
         await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
 
     if bulk_request:
-        db.sku.bulk_write(bulk_request)
+        await db.sku.bulk_write(bulk_request)
 
 
-def disableUser(chat_id):
-    db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
-    db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
+async def disableUser(chat_id):
+    await db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
+    await db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
 
 
 async def checkSKU():
     now = int(time())
     query = {'enable': True, 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}
-    result = db.sku.find(query)
-    prodlist = list(set([doc['store_prodid'] for doc in result]))
-    docs = db.sku.find({'store_prodid': {'$in': prodlist}, 'enable': True}).sort('store_prodid')
-    for doc in docs:
+    prodlist = set()
+    async for doc in db.sku.find(query):
+        prodlist.add(doc['store_prodid'])
+    
+    prodlist = list(prodlist)
+    if not prodlist:
+        return
+
+    cursor = db.sku.find({'store_prodid': {'$in': prodlist}, 'enable': True}).sort('store_prodid')
+    async for doc in cursor:
         if not STORES[doc['store']]['active']: continue
 
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
@@ -749,7 +802,7 @@ async def checkSKU():
         doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
         doc['lastcheckts'] = int(time())
         try:
-            db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
+            await db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
         except Exception:
             pass
         if prod.source == 'web':
@@ -760,7 +813,8 @@ async def errorsMonitor():
     bad = defaultdict(int)
     good = defaultdict(int)
     query = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
-    for doc in db.sku.find(query):
+    
+    async for doc in db.sku.find(query):
         if doc['errors'] == 0:
             good[doc['store']] += 1
         else:
@@ -774,7 +828,14 @@ async def errorsMonitor():
             await bot.send_message(ADMINCHATID, f'Problem with {store}!\nGood: {good_count}\nBad: {bad_count}')
 
 
-if __name__ == '__main__':
+async def main():
+    # settings
+    await loadSettings()
+
+    # Initialize bot and dispatcher
+    global bot
+    botProperties = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
+    bot = Bot(token=TOKEN, default=botProperties)
     scheduler = AsyncIOScheduler(job_defaults={'misfire_grace_time': None})
     scheduler.start()
 
@@ -784,4 +845,8 @@ if __name__ == '__main__':
     scheduler.add_job(clearSKUCache, 'cron', day_of_week='mon', hour=0, minute=0)
     scheduler.add_job(removeInvalidSKU, 'cron', day=1, hour=14, minute=0)
 
-    executor.start_polling(dp, skip_updates=True)
+    await dp.start_polling(bot)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
