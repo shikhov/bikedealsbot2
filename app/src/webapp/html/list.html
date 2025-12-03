@@ -54,7 +54,7 @@
         .item-row {
             background-color: var(--card-bg);
             border-radius: 8px;
-            padding: 16px 20px;
+            padding: 16px 16px;
             display: flex;
             align-items: center;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -86,11 +86,12 @@
         }
 
         .item-row input[type="checkbox"] {
-            width: 20px;
-            height: 20px;
-            margin-right: 20px;
+            width: 16px;
+            height: 16px;
+            margin-right: 16px;
             accent-color: var(--primary-color);
             cursor: pointer;
+            flex-shrink: 0;
         }
 
         .item-name {
