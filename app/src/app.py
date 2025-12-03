@@ -405,7 +405,7 @@ async def processCmdList(message: Message):
     await paginatedTgMsg(text_array, chat_id)
 
 
-@dp.message(Command('list_web'))
+@dp.message(Command('listw'), F.chat.type == ChatType.PRIVATE)
 async def command_list_web(message: Message):
     kb = InlineKeyboardMarkup(
             inline_keyboard=[
