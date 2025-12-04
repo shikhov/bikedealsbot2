@@ -31,8 +31,9 @@ async def api_list_handler(request: Request):
     cursor = db.sku.find({'chat_id': chat_id})
     for doc in await cursor.to_list():
         items.append({
-            'name': f"[{doc['store']}] {doc['name']}",
+            'name': doc['name'],
             'variant': doc['variant'],
+            'store': doc['store'],
             'code': doc['_id']
         })
     

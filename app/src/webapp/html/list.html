@@ -28,6 +28,26 @@
             min-height: 100vh;
         }
 
+        .tag {
+            display: inline-block;
+            padding: 0px 5px;
+            border-radius: 3px;
+            font-size: 14px;
+            margin-right: 6px;            
+        }
+            
+        .BD { background-color: #ffdce0; color: #9b1c1c; }
+        .BC { background-color: #ffebd4; color: #9c4221; }        
+        .TI { background-color: #fff8c4; color: #854d0e; }
+        .SB { background-color: #eaffd0; color: #4d7c0f; }
+        .A4C { background-color: #ccfbf1; color: #0f766e; }
+        .B24 { background-color: #dbeafe; color: #1e40af; }
+        .LG { background-color: #e9d5ff; color: #6b21a8; }
+        .CRC { background-color: #fce7f3; color: #be185d; }
+        .UC { background-color: #e7dcd6; color: #5d4037; }
+        .p-steel { background-color: #e2e8f0; color: #334155; }
+
+
         header { margin-bottom: 20px; }
 
         h1 {
@@ -304,7 +324,7 @@
 
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'item-name';
-                nameSpan.textContent = item.name; 
+                nameSpan.innerHTML = `<span class="tag ${item.store}">${item.store}</span>${item.name}`;
                 div.appendChild(nameSpan);
 
                 if (item.variant && item.variant.trim() !== '') {
