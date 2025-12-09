@@ -307,7 +307,7 @@ async def processURLMsg(message: Message):
         await message.reply('🤷‍♂️ Не могу понять. Кажется, это не ссылка на товар')
         return
 
-    await showVariants(store, url, str(message.from_user.id), message.message_id)
+    await showVariants(store, url, message)
 
 
 def processURL(store, text):
@@ -356,12 +356,11 @@ def processURL(store, text):
 
 @dp.message(F.text.regexp(r'^/add_\w+_\w+_\w+$'), F.chat.type == ChatType.PRIVATE)
 async def processCmdAdd(message: Message):
-    chat_id = str(message.from_user.id)
     params = message.text.split('_')
     store = params[1].upper()
     prodid = params[2]
     skuid = params[3]
-    await addVariant(store, prodid, skuid, chat_id, message.message_id, 'reply')
+    await addVariant(store, prodid, skuid, message)
 
 
 @dp.message(F.text.regexp(r'^/del_\w+_\w+_\w+$'), F.chat.type == ChatType.PRIVATE)
@@ -535,50 +534,52 @@ async def processSearch(message: Message):
     await paginatedTgMsg(text_array, chat_id)
 
 
-async def sendOrEditMsg(text, chat_id, message_id, msgtype):
-    if msgtype == 'reply':
-        await bot.send_message(chat_id=chat_id, text=text, reply_to_message_id=message_id)
-    if msgtype == 'edit':
-        await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id)
+async def reply_or_edit_msg(text, message: Message):
+    if message.from_user.id == bot.id:
+        await message.edit_text(text)
+    else:
+        await message.reply(text)
 
 
-async def showVariants(store, url, chat_id, message_id):
-    msg = await bot.send_message(chat_id, '🔎 Ищу информацию о товаре...', reply_to_message_id=message_id)
+
+async def showVariants(store, url, message: Message):
+    sent_msg = await message.reply('🔎 Ищу информацию о товаре...')
 
     prod = await getProduct(store, url)
     if prod.var_count == 0:
-        await msg.edit_text('Не смог найти цену 😧')
+        await sent_msg.edit_text('Не смог найти цену 😧')
     elif prod.var_count == 1:
-        await addVariant(store, prod.id, prod.first_skuid, chat_id, msg.message_id, 'edit')
+        await addVariant(store, prod.id, prod.first_skuid, sent_msg)
     elif prod.var_count > 1:
-        await paginatedTgMsg(prod.getSkuAddList(), chat_id, msg.message_id)
+        await paginatedTgMsg(prod.getSkuAddList(), message.chat.id, sent_msg.message_id)
 
 
-async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
+async def addVariant(store, prodid, skuid, message: Message):
+    chat_id = str(message.chat.id)
     user = await db.users.find_one({'_id': chat_id})
     if not user:
-        await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
+        await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
     maxitems = user.get('maxitems', MAXITEMSPERUSER)
     query = {'chat_id': chat_id}
     if await db.sku.count_documents(query) >= maxitems:
-        await sendOrEditMsg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', chat_id, message_id, msgtype)
+        await reply_or_edit_msg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', message)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
     if await db.sku.find_one({'_id': docid}):
-        await sendOrEditMsg('️☝️ Товар уже есть в вашем списке', chat_id, message_id, msgtype)
+        await reply_or_edit_msg('️☝️ Товар уже есть в вашем списке', message)
         return
 
     url = await getURL(store, prodid)
     if not url:
-        await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
+        await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
     prod = await getProduct(store, url)
     if not prod.hasSku(skuid):
-        await sendOrEditMsg('Какая-то ошибка 😧', chat_id, message_id, msgtype)
+        await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
     data = prod.variants[skuid].copy()
@@ -596,7 +597,7 @@ async def addVariant(store, prodid, skuid, chat_id, message_id, msgtype):
     await db.sku.insert_one(data)
 
     dispname = data['variant'] or data['name']
-    await sendOrEditMsg(dispname + '\n✔️ Добавлено к отслеживанию', chat_id, message_id, msgtype)
+    await reply_or_edit_msg(dispname + '\n✔️ Добавлено к отслеживанию', message)
 
 
 async def getURL(store, prodid):
