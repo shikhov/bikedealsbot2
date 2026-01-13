@@ -5,9 +5,6 @@ from aiohttp.web_request import Request
 from aiohttp.web_response import json_response
 
 from pymongo import DeleteOne
-import json
-
-import logging
 
 from aiogram import Bot
 from aiogram.utils.web_app import safe_parse_webapp_init_data
@@ -43,8 +40,6 @@ async def api_list_handler(request: Request):
 async def api_delete_handler(request: Request):
     bot: Bot = request.app["bot"]
     jsondata = await request.json()
-    
-    logging.info(f'json_data: {json.dumps(jsondata, indent=4, ensure_ascii=False)}')
 
     try:
         webapp_data = safe_parse_webapp_init_data(token=bot.token, init_data=jsondata['_auth'])
