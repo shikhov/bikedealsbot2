@@ -293,48 +293,44 @@ async def parseBD(url, httptimeout):
             content = response.text
             url = response.url
 
-        matches = re.search(r'dataLayer = \[(.+?)\]', content, re.DOTALL)
-        if not matches:
-            matches = re.search(r'dataLayer.push\((.+?)\);', content, re.DOTALL)
-        jsdata = json.loads(matches.group(1))
-        prodid = str(jsdata['productID'])
-        currency = jsdata['productCurrency']
-
-        matches = re.search(r'dataLayer.push \((.+?)\);', content, re.DOTALL)
-        jsdata = json.loads(matches.group(1))['ecommerce']['detail']['products'][0]
-        name = jsdata['brand'] + ' ' + jsdata['name']
-        price = jsdata['price']
-
-        def findVariants(tag):
-            return tag.name == 'input' and tag.has_attr('class') and 'option--input' in tag['class']
-
+        matches = re.search(r'dataLayer.push\((\{"event":.+?)\);', content, re.DOTALL)
+        jsdata = json.loads(matches.group(1))['ecommerce']['items'][0]
+        name = jsdata['item_brand'] + ' ' + jsdata['item_name']
+        prodid = str(crc32.new(url.encode('utf-8')).crcValue)
+        
         variants = {}
         soup = BeautifulSoup(content, 'lxml')
-        res = soup.find_all(findVariants)
+        res = soup.find('form', {'data-nele-variant-data': True})
+
         if res:
-            for x in res:
-                skuid = x['value']
+            jsdata = json.loads(res.get('data-nele-variant-data'))
+            varnames = {x['id']: x['translated']['name'] for x in jsdata['configuratorSettings'][0]['options']}
+            for offer in jsdata['siblings']:
+                option_id = offer['optionIds'][0]
+                varname = varnames[option_id]
+                skuid = str(crc16.new(varname.encode('utf-8')).crcValue)
                 variants[skuid] = {}
-                variants[skuid]['variant'] = x['title']
+                variants[skuid]['variant'] = varname
                 variants[skuid]['prodid'] = prodid
-                variants[skuid]['price'] = int(float(x['price'])*0.841)
-                variants[skuid]['currency'] = currency
+                variants[skuid]['price'] = int(offer['calculatedPrice']['unitPrice'])
+                variants[skuid]['currency'] = 'EUR'
                 variants[skuid]['store'] = 'BD'
                 variants[skuid]['url'] = url
                 variants[skuid]['name'] = name
-                variants[skuid]['instock'] = (x['stock-color'] in ['1', '6'])
+                variants[skuid]['instock'] = offer['available']
         else:
-            matches = re.search(r'<link itemprop="availability" href="https?://schema\.org/(.+?)"', content, re.DOTALL)
-            instock = (matches.group(1) == 'InStock')
+            res = soup.find('script', {'type': 'application/ld+json'})
+            jsdata = json.loads(res.string)[0]
+            offer = jsdata['offers'][0]
             variants['0'] = {}
             variants['0']['variant'] = ''
             variants['0']['prodid'] = prodid
-            variants['0']['price'] = int(float(price)*0.841)
-            variants['0']['currency'] = currency
+            variants['0']['price'] = int(offer['price'])
+            variants['0']['currency'] = offer['priceCurrency']
             variants['0']['store'] = 'BD'
             variants['0']['url'] = url
-            variants['0']['name'] = name
-            variants['0']['instock'] = instock
+            variants['0']['name'] = jsdata['brand']['name'] + ' ' + jsdata['name']
+            variants['0']['instock'] = (offer['availability'] != 'https://schema.org/OutOfStock')
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
