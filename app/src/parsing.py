@@ -1,6 +1,7 @@
 import json
 import re
 import urllib.parse
+from itertools import product
 
 import crcmod.predefined
 from aiohttp import ClientSession, ClientTimeout
@@ -67,86 +68,87 @@ async def parseSB(url, httptimeout):
 async def parseB24(url, httptimeout):
     try:
         async with curl.AsyncSession() as session:
-            response = await session.get(url, impersonate='safari15_5', timeout=httptimeout)
+            response = await session.get(url, impersonate='firefox', timeout=httptimeout)
             content = response.text
 
-        matches = re.search(r'window\.dataLayer\.push\(({\\"vpv.+?})\);', content, re.DOTALL)
-        rawjson = matches.group(1)
-        rawjson = rawjson.replace('\\"', '"')
-        rawjson = rawjson.replace('\\\\"', '\\"')
-        jsdata = json.loads(rawjson)
-        instock = jsdata['isAvailable']
-        availdict = {}
-        for entry in jsdata['productOptionsAvailability']:
-            arr = entry.replace('\/', '/').split('|')
-            varname = arr[0].replace(':', '|')
-            varcount = arr[1]
-            availdict[varname] = varcount
-
-        def findDataProps(tag):
-            return tag.name == 'div' and tag.get('id') == 'add-to-cart'
-
         soup = BeautifulSoup(content, 'lxml')
-        res = soup.find_all(findDataProps)
-        jsdata = json.loads(res[0]['data-props'])
-        price = int(float(jsdata['gtmData']['price']))
-        prodid = str(jsdata['gtmData']['id'])
-        name = jsdata['gtmData']['name'].replace('\/', '/')
-        variant = jsdata['gtmData']['variant'].replace('\/', '/')
+        res = soup.find('div', {'id': 'add-to-cart'})
+        jsdata = json.loads(res['data-props'])
+
+        price = int(float(jsdata['ga4GtmData']['price']))
+        prodid = str(jsdata['ga4GtmData']['item_id'])
+        name = jsdata['ga4GtmData']['item_name']
         currency = jsdata['productDetailPrice']['currencyCode']
         coeff = 1.191
 
-        namesplit = name.split(' - ')
-        if len(namesplit) > 1:
-            name = namesplit[0]
-            variant = ', '.join(namesplit[1:]) + (', ' + variant if variant else '')
+        jsurl = f'https://www.bike24.com/api/product/{prodid}/availability?deliveryCountryId=4&zipCode='
+        async with curl.AsyncSession() as s:            
+            response = await s.get(jsurl, impersonate='firefox', timeout=httptimeout)        
+            availdata = response.text
+
+        availdict = {}
+        availjson = json.loads(availdata)
+        for key, value in availjson['availabilityVariantsList'].items():
+            if ',' in key:
+                skuid_parts = key.split(',')
+                tmp = []
+                for part in skuid_parts:                    
+                    tmp.append(part.split('=')[-1])
+                s = '_'.join(sorted(tmp)).encode('utf-8')
+                skuid = str(crc16.new(s).crcValue)
+            elif '=' in key:
+                skuid = key.split('=')[-1]
+            else:
+                skuid = key
+            availdict[skuid] = value['availability']['currentStock'] > 0
 
         variants = {}
 
-        if jsdata['productOptionList']:
-            if len(jsdata['productOptionList']) == 1:
-                for sku in jsdata['productOptionList'][0]['optionValueList']:
-                    skuid = str(sku['id'])
-                    variants[skuid] = {}
-                    vartext = sku['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
-                    variants[skuid]['instock'] = False
-                    if vartext in availdict:
-                        variants[skuid]['instock'] = (availdict[vartext] != '0')
-                    variants[skuid]['variant'] = ((variant + ', ' if variant else '') + vartext).replace('\/', '/').strip()
-                    variants[skuid]['prodid'] = prodid
-                    variants[skuid]['price'] = price + int(sku['surcharge']*coeff)
-                    variants[skuid]['currency'] = currency
-                    variants[skuid]['store'] = 'B24'
-                    variants[skuid]['url'] = url
-                    variants[skuid]['name'] = name
-            if len(jsdata['productOptionList']) == 2:
-                for sku1 in jsdata['productOptionList'][0]['optionValueList']:
-                    for sku2 in jsdata['productOptionList'][1]['optionValueList']:
-                        skuid = str(crc16.new((str(sku1['id']) + str(sku2['id'])).encode('utf-8')).crcValue)
-                        variants[skuid] = {}
-                        name1 = sku1['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
-                        name2 = sku2['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
-                        vartext = name1 + ' | ' + name2
-                        variants[skuid]['instock'] = (availdict[name1] != '0' and availdict[name2] != '0')
-                        variants[skuid]['variant'] = ((variant + ', ' if variant else '') + vartext).replace('\/', '/').strip()
-                        variants[skuid]['prodid'] = prodid
-                        variants[skuid]['price'] = price + int(sku1['surcharge']*coeff) + int(sku2['surcharge']*coeff)
-                        variants[skuid]['currency'] = currency
-                        variants[skuid]['store'] = 'B24'
-                        variants[skuid]['url'] = url
-                        variants[skuid]['name'] = name
-            if len(jsdata['productOptionList']) > 2:
-                raise Exception
+        if jsdata['productOptionList']:            
+            options = jsdata['productOptionList']
+            lists = [opt['optionValueList'] for opt in options]
+            combos = {}
+            for combo in product(*lists):
+                ids = []
+                optnames = []
+                surcharge = 0
+                for x in combo:
+                    optname = x['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+                    optnames.append(optname)
+                    ids.append(str(x['id']))                    
+                    surcharge += x['surcharge']
+
+                if len(ids) > 1:                      
+                    s = "_".join(sorted(ids)).encode('utf-8')
+                    key = str(crc16.new(s).crcValue)
+                else:
+                    key = ids[0]                    
+
+                combos[key] = {
+                    "variant": ', '.join(optnames),
+                    "surcharge": surcharge
+                }
+
+            for skuid, sku in combos.items():
+                variants[skuid] = {}
+                variants[skuid]['instock'] = availdict[skuid]
+                variants[skuid]['variant'] = sku['variant']
+                variants[skuid]['prodid'] = prodid
+                variants[skuid]['price'] = price + int(sku['surcharge']*coeff)
+                variants[skuid]['currency'] = currency
+                variants[skuid]['store'] = 'B24'
+                variants[skuid]['url'] = url
+                variants[skuid]['name'] = name
         else:
             variants['0'] = {}
-            variants['0']['variant'] = variant
+            variants['0']['variant'] = ""
             variants['0']['prodid'] = prodid
             variants['0']['price'] = price
             variants['0']['currency'] = currency
             variants['0']['store'] = 'B24'
             variants['0']['url'] = url
             variants['0']['name'] = name
-            variants['0']['instock'] = instock
+            variants['0']['instock'] = availdict[prodid]
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
