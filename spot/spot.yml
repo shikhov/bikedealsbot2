@@ -1,9 +1,8 @@
 ssh_key: /home/user44/id_rsa
-inventory: inventory/inventory.yml
+inventory: /mnt/c/Users/shikh/GitHub/spot/inventory.yml
 
 tasks:
   - name: deploy
-    targets: ["default"]
     commands:
       - name: Sync src folder
         sync: {src: "../app", dst: "$appname$target", delete: true}
@@ -12,7 +11,7 @@ tasks:
         copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
 
       - name: Docker build and start
-        script: |
+        script: | # sh
           docker build $appname$target -t $appname$target-image
           docker stop $appname$target || true
           docker rm $appname$target || true
@@ -37,5 +36,5 @@ tasks:
         copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
 
       - name: Docker build and start
-        script: |
+        script: | # sh
           docker restart bdbot2_debug || true
