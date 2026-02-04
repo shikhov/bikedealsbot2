@@ -281,7 +281,7 @@
         var initData = Telegram.WebApp.initData || '';
         var data;
         var url = new URL(window.location.href);
-        var API_URL = url.protocol + '//' + url.hostname + '/' + url.pathname.split('/').at(1) + '/api';
+        var API_URL = url.protocol + '//' + url.hostname + ':' + url.port +'/' + url.pathname.split('/').at(1) + '/api';
 
         async function loadItems() {
             const listContainer = document.getElementById('itemsList');
