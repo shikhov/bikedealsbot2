@@ -400,11 +400,14 @@ async def parseA4C(url, httptimeout):
                 content = await response.text()
                 url = str(response.url)
 
-        prodid = str(crc32.new(url.encode('utf-8')).crcValue)
-        matches = re.search(r'variants: (.+?)};(.*)?</script>', content, re.DOTALL)
-        jsraw = matches.group(1).rstrip().rstrip(',')
-        jsraw = '{"variants": ' + jsraw + '}'
+        prodid = str(crc32.new(url.encode('utf-8')).crcValue)        
+        matches = re.search(r'_ReStockConfig.product = {(.+?)};', content, re.DOTALL)
+        jsraw = matches.group(1)
+        jsraw = re.sub(r',(\s*[}\]])', r'\1', jsraw)
+        jsraw = re.sub(r'(\w+)\s*:', r'"\1":', jsraw)
+        jsraw = '{' + jsraw + '}'
         jsdata = json.loads(jsraw)
+        name = jsdata['title'].split(' - ')[0]
         variants = {}
         for x in jsdata['variants']:
             skuid = str(crc16.new(str(x['id']).encode('utf-8')).crcValue)
@@ -415,7 +418,7 @@ async def parseA4C(url, httptimeout):
             variants[skuid]['currency'] = 'EUR'
             variants[skuid]['store'] = 'A4C'
             variants[skuid]['url'] = url
-            variants[skuid]['name'] = x['name'].split(' - ')[0]
+            variants[skuid]['name'] = name
             variants[skuid]['instock'] = x['available']
 
         return {'status': STATUS_OK, 'variants': variants}
