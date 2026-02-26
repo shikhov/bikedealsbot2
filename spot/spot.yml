@@ -1,5 +1,5 @@
-ssh_key: /home/user44/id_rsa
-inventory: /mnt/c/Users/shikh/GitHub/spot/inventory.yml
+ssh_key: C:\Users\shikh\spot\id_rsa
+inventory: C:\Users\shikh\spot\inventory.yml
 
 tasks:
   - name: deploy
@@ -15,7 +15,7 @@ tasks:
           docker build $appname$target -t $appname$target-image
           docker stop $appname$target || true
           docker rm $appname$target || true
-          docker run -d -p $port:$port --network reproxy -e HOST=$host -e APP_NAME=$appname$target -e PORT=$port --name $appname$target --restart=on-failure $appname$target-image
+          docker run -d --network reproxy -e HOST=$host -e PATH=$appname$target --name $appname$target --restart=on-failure $appname$target-image
 
 
   - name: debug_sync

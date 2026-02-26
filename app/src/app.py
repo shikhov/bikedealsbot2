@@ -28,10 +28,10 @@ import parsing
 
 from config import CONNSTRING, DBNAME
 
-APP_NAME = os.getenv('APP_NAME')
+PATH = os.getenv('PATH')
 HOST = os.getenv('HOST')
-PORT = os.getenv('PORT')
-APP_BASE_URL = f'https://{HOST}/{APP_NAME}'
+APP_BASE_URL = f'https://{HOST}/{PATH}'
+PORT = 8000
 
 STATUS_OK = 0
 STATUS_TIMEOUTERROR = 1

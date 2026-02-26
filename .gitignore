@@ -4,3 +4,4 @@ spot/inventory/
 config/
 __pycache__
 .idea
+env*.yml
