@@ -28,9 +28,9 @@ import parsing
 
 from config import CONNSTRING, DBNAME
 
-PATH = os.getenv('PATH')
+WEBAPP_PATH = os.getenv('PATH')
 HOST = os.getenv('HOST')
-APP_BASE_URL = f'https://{HOST}/{PATH}'
+APP_BASE_URL = f'https://{HOST}/{WEBAPP_PATH}'
 PORT = 8000
 
 STATUS_OK = 0
