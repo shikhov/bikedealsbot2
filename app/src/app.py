@@ -31,7 +31,7 @@ from config import CONNSTRING, DBNAME
 WEBAPP_PATH = os.getenv('PATH')
 HOST = os.getenv('HOST')
 APP_BASE_URL = f'https://{HOST}/{WEBAPP_PATH}'
-PORT = 8000
+PORT = os.getenv('PORT')
 
 STATUS_OK = 0
 STATUS_TIMEOUTERROR = 1

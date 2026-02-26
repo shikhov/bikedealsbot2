@@ -5,4 +5,5 @@ COPY src/ /usr/src/app
 COPY requirements.txt ./
 RUN uv pip install --no-cache --system -r requirements.txt
 EXPOSE 8000
+ENV PORT=8000
 CMD [ "python", "app.py" ]
