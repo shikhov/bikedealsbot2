@@ -459,6 +459,7 @@ async def processCmdStat(message: Message):
         userswsku = 0
         
     skuactive = await db.sku.count_documents({'enable': True})
+    unique_urls = len(await db.sku.distinct('url', {'enable': True}))
 
     msg = ''
     msg += f'<b>Total users:</b> {usersall}\n'
@@ -466,6 +467,7 @@ async def processCmdStat(message: Message):
     msg += f'<b>Enabled users with SKU:</b> {userswsku}\n'
     msg += f'<b>Total SKU:</b> {skuall}\n'
     msg += f'<b>Active SKU:</b> {skuactive}\n'
+    msg += f'<b>Unique active URLs:</b> {unique_urls}\n'
 
     for key in STORES.keys():
         num = await db.sku.count_documents({'store': key})
