@@ -29,8 +29,8 @@ import parsing
 from config import CONNSTRING, DBNAME
 
 WEBAPP_PATH = os.getenv('WEBAPP_PATH')
-HOST = os.getenv('HOST')
-APP_BASE_URL = f'https://{HOST}/{WEBAPP_PATH}'
+WEBAPP_HOST = os.getenv('WEBAPP_HOST')
+WEBAPP_URL = f'https://{WEBAPP_HOST}/{WEBAPP_PATH}'
 PORT = os.getenv('PORT')
 
 STATUS_OK = 0
@@ -409,7 +409,7 @@ async def command_list_web(message: Message):
     kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text='Открыть', web_app=WebAppInfo(url=f'{APP_BASE_URL}/list/'))
+                    InlineKeyboardButton(text='Открыть', web_app=WebAppInfo(url=f'{WEBAPP_URL}/list/'))
                 ]
             ]
     )
