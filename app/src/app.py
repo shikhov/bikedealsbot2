@@ -207,7 +207,7 @@ async def processCmdStart(message: Message):
     await db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
 
-async def broadcast(message: Message, text, docs):
+async def broadcast(message: Message, text, docs, pin=False):
     text_hash = md5(text.encode('utf-8')).hexdigest()
     await message.answer('🟢 Начало рассылки')
 
@@ -220,7 +220,9 @@ async def broadcast(message: Message, text, docs):
         if text_hash in doc.setdefault('broadcasts', []): continue
 
         try:
-            await bot.send_message(chat_id=doc['_id'], text=text)
+            sent_message = await bot.send_message(chat_id=doc['_id'], text=text)
+            if pin:
+                await bot.pin_chat_message(chat_id=doc['_id'], message_id=sent_message.message_id)
             doc['broadcasts'].append(text_hash)
             await db.users.update_one({'_id': doc['_id']}, {'$set': doc})
         except Exception as e:
@@ -255,6 +257,13 @@ async def processCmdBroadcast(message: Message):
     text = message.html_text.replace('/bc', '', 1).strip()
     docs = db.users.find({'enable': True})
     await broadcast(message, text, docs)
+
+
+@dp.message(Command('bc_pin'), IsAdmin())
+async def processCmdBroadcastAndPin(message: Message):
+    text = message.html_text.replace('/bc_pin', '', 1).strip()
+    docs = db.users.find({'enable': True})
+    await broadcast(message, text, docs, pin=True)
 
 
 @dp.message(F.text.regexp(r'^/bc_\w+'), IsAdmin())
