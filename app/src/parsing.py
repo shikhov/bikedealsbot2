@@ -306,10 +306,8 @@ async def parseBD(url, httptimeout):
 
         if res:
             jsdata = json.loads(res.get('data-nele-variant-data'))
-            varnames = {x['id']: x['translated']['name'] for x in jsdata['configuratorSettings'][0]['options']}
             for offer in jsdata['siblings']:
-                option_id = offer['optionIds'][0]
-                varname = varnames[option_id]
+                varname = offer['variantName']
                 skuid = str(crc16.new(varname.encode('utf-8')).crcValue)
                 variants[skuid] = {}
                 variants[skuid]['variant'] = varname
