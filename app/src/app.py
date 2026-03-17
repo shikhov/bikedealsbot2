@@ -174,9 +174,14 @@ async def processException(e: Exception, chat_id: str):
 
 
 async def logMessage(message: Message):
-    if not LOGCHATID: return
-    if message.from_user.id == ADMINCHATID: return
-    if message.text in LOGFILTER: return
+    if not LOGCHATID:
+        return
+    if message.from_user.id in [ADMINCHATID, bot.id]:
+        return
+    if not message.text:
+        return
+    if message.text in LOGFILTER:
+        return
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
     logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
