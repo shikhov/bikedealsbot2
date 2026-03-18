@@ -140,6 +140,8 @@ class LoggingMiddleware(BaseMiddleware):
         event: Message,
         data: Dict[str, Any]
     ) -> Any:
+        if event.from_user.id == bot.id:
+            return
         if isinstance(event, Message):
             if event.text != '/start' and event.chat.type == ChatType.PRIVATE:
                 chat_id = str(event.from_user.id)
@@ -176,7 +178,7 @@ async def processException(e: Exception, chat_id: str):
 async def logMessage(message: Message):
     if not LOGCHATID:
         return
-    if message.from_user.id in [ADMINCHATID, bot.id]:
+    if message.from_user.id == ADMINCHATID:
         return
     if not message.text:
         return
