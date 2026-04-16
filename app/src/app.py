@@ -69,7 +69,8 @@ class Product:
         text_array = []
         text_array.append(self.name)
         for skuid, sku in self.variants.items():
-            line = getSkuString(sku, ['icon', 'price']) + f'\n<i>Добавить: /add_{self.storelc}_{self.id}_{skuid}</i>'
+            sku['skuid'] = skuid
+            line = getSkuString(sku, ['icon', 'price'], action='add')
             text_array.append(line)
 
         return text_array
@@ -408,8 +409,7 @@ async def processCmdList(message: Message):
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
     async for doc in db.sku.find(query):
-        key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
-        line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
+        line = getSkuString(doc, ['store', 'url', 'icon', 'price'], action='del')
         text_array.append(line)
 
     if text_array:
@@ -543,8 +543,7 @@ async def processSearch(message: Message):
     query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
     text_array = []
     async for doc in db.sku.find(query):
-        key = doc['store'].lower() + '_' + doc['prodid'] + '_' + doc['skuid']
-        line = getSkuString(doc, ['store', 'url', 'icon', 'price']) + f'\n<i>Удалить: /del_{key}</i>'
+        line = getSkuString(doc, ['store', 'url', 'icon', 'price'], action='del')
         text_array.append(line)
 
     header = f'Результаты поиска по строке <b>{text}</b>:'
@@ -691,7 +690,7 @@ async def removeInvalidSKU():
         await asyncio.sleep(0.1)
 
 
-def getSkuString(sku, options):
+def getSkuString(sku, options, action=None):
     instock = sku['instock']
     url = sku['url']
     name = sku['name']
@@ -700,6 +699,9 @@ def getSkuString(sku, options):
     price_prev = sku.get('price_prev')
     currency = sku['currency']
     store = sku['store']
+    prodid = sku['prodid']
+    skuid = sku['skuid']
+    key = store.lower() + '_' + prodid + '_' + skuid
     errors = sku.get('errors', 0)
 
     storename = ''
@@ -707,21 +709,29 @@ def getSkuString(sku, options):
     icon = ''
     pricetxt = ''
     pricetxt_prev = ''
+    actiontxt = ''
 
     if 'url' in options:
         urlname = f'<a href="{url}">{name}</a>\n'
     if 'icon' in options:
         icon = '✅ ' if instock else '🚫 '
-        if errors > ERRORMINTHRESHOLD: icon = '⚠️ '
-        if not STORES[store]['active']: icon = '⏳ '
+        if errors > ERRORMINTHRESHOLD:
+            icon = '⚠️ '
+        if not STORES[store]['active']:
+            icon = '⏳ '
     if 'store' in options:
         storename = f'<code>[{store}]</code> '
     if 'price' in options:
         pricetxt = f' <b>{price} {currency}</b>'
     if 'price_prev' in options:
         pricetxt_prev = f' (было: {price_prev} {currency})'
+    
+    if action == 'add':
+        actiontxt = f'\n<i>Добавить: /add_{key}</i>'
+    if action == 'del':        
+        actiontxt = f'\n<i>Удалить: /del_{key}</i>'
 
-    return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip()
+    return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip() + actiontxt
 
 
 async def cacheVariants(url, result):
