@@ -46,24 +46,55 @@ class IsAdmin(BaseFilter):
 
 
 class Product:
-    id = None
-    first_skuid = None
-    name = None
-    store = None
-    storelc = None
-    var_count = 0
-
     def __init__(self, data, source):
         self.variants = data
         self.source = source
+        self.id = None
+        self.first_skuid = None
+        self.name = None
+        self.store = None
+        self.var_count = 0
+
         if data:
             first_sku = list(data.values())[0]
             self.id = first_sku['prodid']
             self.first_skuid = list(data.keys())[0]
             self.name = first_sku['name']
             self.store = first_sku['store']
-            self.storelc = first_sku['store'].lower()
             self.var_count = len(data)
+
+    @classmethod
+    async def get(cls, store, url):
+        tsexpired = int(time()) - CACHELIFETIME * 60
+        query = {'url': url, 'timestamp': {'$gt': tsexpired}}
+        doc = await db.skucache.find_one(query)
+        if doc:
+            return cls(data=doc['variants'], source='cache')
+
+        parseFunction = getattr(parsing, 'parse' + store)
+        result = await parseFunction(url, HTTPTIMEOUT)
+        await cls._cache(url, result)
+        return cls(data=result['variants'], source='web')
+
+    @staticmethod
+    async def _cache(url, result):
+        if result['status'] == STATUS_TIMEOUTERROR:
+            return
+
+        variants = result['variants']
+        if variants:
+            first_sku = list(variants.values())[0]
+            docid = first_sku['store'] + '_' + first_sku['prodid']
+            query = {'_id': docid}
+        else:
+            query = {'url': url}
+
+        data = {
+            'variants': variants,
+            'timestamp': int(time()),
+            'url': url
+        }
+        await db.skucache.update_one(query, {'$set': data}, upsert=True)
 
     def getSkuAddList(self):
         text_array = []
@@ -422,13 +453,8 @@ async def processCmdList(message: Message):
 
 @dp.message(Command('listw'), F.chat.type == ChatType.PRIVATE)
 async def command_list_web(message: Message):
-    kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text='Открыть', web_app=WebAppInfo(url=f'{WEBAPP_URL}/list/'))
-                ]
-            ]
-    )
+    btn = InlineKeyboardButton(text='Открыть', web_app=WebAppInfo(url=f'{WEBAPP_URL}/list/'))
+    kb = InlineKeyboardMarkup(inline_keyboard=[[btn]])
     await message.answer(
         'Нажмите кнопку ниже, чтобы открыть веб-интерфейс для управления отслеживаемыми товарами:',
         reply_markup=kb
@@ -562,7 +588,7 @@ async def reply_or_edit_msg(text, message: Message):
 async def showVariants(store, url, message: Message):
     sent_msg = await message.reply('🔎 Ищу информацию о товаре...')
 
-    prod = await getProduct(store, url)
+    prod = await Product.get(store, url)
     if prod.var_count == 0:
         await sent_msg.edit_text('Не смог найти цену 😧')
     elif prod.var_count == 1:
@@ -594,7 +620,7 @@ async def addVariant(store, prodid, skuid, message: Message):
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
-    prod = await getProduct(store, url)
+    prod = await Product.get(store, url)
     if not prod.hasSku(skuid):
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
@@ -650,17 +676,6 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
         await sendOrEditMsg()
 
 
-async def getProduct(store, url):
-    tsexpired = int(time()) - CACHELIFETIME * 60
-    query = {'url': url, 'timestamp': {'$gt': tsexpired}}
-    doc = await db.skucache.find_one(query)
-    if doc:
-        return Product(data=doc['variants'], source='cache')
-
-    parseFunction = getattr(parsing, 'parse' + store)
-    result = await parseFunction(url, HTTPTIMEOUT)
-    await cacheVariants(url, result)
-    return Product(data=result['variants'], source='web')
 
 
 async def clearSKUCache():
@@ -734,24 +749,6 @@ def getSkuString(sku, options, action=None):
     return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip() + actiontxt
 
 
-async def cacheVariants(url, result):
-    if result['status'] == STATUS_TIMEOUTERROR:
-        return
-
-    variants = result['variants']
-    if variants:
-        first_sku = list(variants.values())[0]
-        docid = first_sku['store'] + '_' + first_sku['prodid']
-        query = {'_id': docid}
-    else:
-        query = {'url': url}
-
-    data = {
-            'variants': variants,
-            'timestamp': int(time()),
-            'url': url
-    }
-    await db.skucache.update_one(query, {'$set': data}, upsert=True)
 
 
 async def notify():
@@ -836,7 +833,7 @@ async def checkSKU():
 
         logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
 
-        prod = await getProduct(doc['store'], doc['url'])
+        prod = await Product.get(doc['store'], doc['url'])
         if prod.hasSku(doc['skuid']):
             sku = prod.variants[doc['skuid']]
             if sku['instock'] != doc['instock']:
