@@ -239,47 +239,44 @@ async def parseBC(url, httptimeout):
         variants = {}
         for x in res:
             jsdata = json.loads(x.text)
-            if isinstance(jsdata, list):
+            if jsdata.get('@type') in ['Product', 'ProductGroup']:
                 break
 
-        for x in jsdata:
-            if x['@type'] == 'Product':
-                skus = x['offers']
-                for sku in skus:
-                    skuid = sku['sku'].replace(str(x['sku']), '').replace('-', '')
-                    variants[skuid] = {}
-                    variants[skuid]['variant'] = sku['name'].replace('\/', '/')
-                    variants[skuid]['prodid'] = str(x['sku'])
-                    psdict = {p['priceType']: p for p in sku['priceSpecification']}
-                    ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
-                    variants[skuid]['price'] = int(ps['price'])
-                    if 'True' in ps['valueAddedTaxIncluded']:
-                        variants[skuid]['price'] = int(ps['price']*0.84)
-                    variants[skuid]['currency'] = ps['priceCurrency']
-                    variants[skuid]['store'] = 'BC'
-                    variants[skuid]['url'] = url
-                    variants[skuid]['name'] = (x['brand']['name'] + ' ' + x['name'].replace('\/', '/'))
-                    variants[skuid]['instock'] = 'InStock' in sku['availability']
-                break
+        if jsdata['@type'] == 'Product':
+            skus = jsdata['offers']
+            for sku in skus:
+                skuid = sku['sku'].replace(str(jsdata['sku']), '').replace('-', '')
+                variants[skuid] = {}
+                variants[skuid]['variant'] = sku['name'].replace('\/', '/')
+                variants[skuid]['prodid'] = str(jsdata['sku'])
+                psdict = {p['priceType']: p for p in sku['priceSpecification']}
+                ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
+                variants[skuid]['price'] = int(ps['price'])
+                if 'True' in ps['valueAddedTaxIncluded']:
+                    variants[skuid]['price'] = int(ps['price']*0.84)
+                variants[skuid]['currency'] = ps['priceCurrency']
+                variants[skuid]['store'] = 'BC'
+                variants[skuid]['url'] = url
+                variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
+                variants[skuid]['instock'] = 'InStock' in sku['availability']
 
-            if x['@type'] == 'ProductGroup':
-                skus = x['hasVariant']
-                for sku in skus:
-                    skuid = sku['sku'].replace(str(x['productGroupID']), '').replace('-', '')
-                    variants[skuid] = {}
-                    variants[skuid]['variant'] = sku['name'].replace('\/', '/')
-                    variants[skuid]['prodid'] = str(x['productGroupID'])
-                    psdict = {p['priceType']: p for p in sku['offers']['priceSpecification']}
-                    ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
-                    variants[skuid]['price'] = int(ps['price'])
-                    if 'True' in ps['valueAddedTaxIncluded']:
-                        variants[skuid]['price'] = int(ps['price']*0.84)
-                    variants[skuid]['currency'] = ps['priceCurrency']
-                    variants[skuid]['store'] = 'BC'
-                    variants[skuid]['url'] = url
-                    variants[skuid]['name'] = (x['brand']['name'] + ' ' + x['name'].replace('\/', '/'))
-                    variants[skuid]['instock'] = 'InStock' in sku['offers']['availability']
-                break
+        if jsdata['@type'] == 'ProductGroup':
+            skus = jsdata['hasVariant']
+            for sku in skus:
+                skuid = sku['sku'].replace(str(jsdata['productGroupID']), '').replace('-', '')
+                variants[skuid] = {}
+                variants[skuid]['variant'] = sku['name'].replace('\/', '/')
+                variants[skuid]['prodid'] = str(jsdata['productGroupID'])
+                psdict = {p['priceType']: p for p in sku['offers']['priceSpecification']}
+                ps = psdict.get('https://schema.org/SalePrice') or psdict.get('https://schema.org/ListPrice')
+                variants[skuid]['price'] = int(ps['price'])
+                if 'True' in ps['valueAddedTaxIncluded']:
+                    variants[skuid]['price'] = int(ps['price']*0.84)
+                variants[skuid]['currency'] = ps['priceCurrency']
+                variants[skuid]['store'] = 'BC'
+                variants[skuid]['url'] = url
+                variants[skuid]['name'] = (jsdata['brand']['name'] + ' ' + jsdata['name'].replace('\/', '/'))
+                variants[skuid]['instock'] = 'InStock' in sku['offers']['availability']
 
         return {'status': STATUS_OK, 'variants': variants}
     except TimeoutError:
