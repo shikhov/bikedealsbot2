@@ -113,7 +113,8 @@ async def parseB24(url, httptimeout):
                 optnames = []
                 surcharge = 0
                 for x in combo:
-                    optname = x['name'].replace('not deliverable: ', '').replace(' - add {SURCHARGE}', '')
+                    optname = x['name'].replace('not deliverable: ', '')
+                    optname = re.sub(r' - add \d+.+$', '', optname)
                     optnames.append(optname)
                     ids.append(str(x['id']))                    
                     surcharge += x['surcharge']
