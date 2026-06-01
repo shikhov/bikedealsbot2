@@ -10,7 +10,7 @@ from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import Bot, Dispatcher, F, BaseMiddleware
 from aiogram.enums import ChatType, ParseMode
-from aiogram.filters import Command, CommandStart, BaseFilter
+from aiogram.filters import Command, CommandObject, CommandStart, BaseFilter
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import (
     Message,
@@ -305,12 +305,15 @@ async def processCmdBroadcastAndPin(message: Message):
     await broadcast(message, text, docs, pin=True)
 
 
-@dp.message(F.text.regexp(r'^/bc_\w+'), IsAdmin())
-async def processCmdBroadcastByStore(message: Message):
-    text = message.get_args()
-    params = message.get_command().split('_')
-    store = params[1].upper()
-    docs = db.users.aggregate([
+@dp.message(Command(re.compile(r'^bc_(\w+)$')), IsAdmin())
+async def processCmdBroadcastByStore(message: Message, command: CommandObject):
+    store = command.regexp_match.group(1).upper()
+    text = (command.args or '').strip()
+    if not text:
+        await message.answer('Empty broadcast text')
+        return
+
+    docs = await db.users.aggregate([
         {
             '$lookup':
             {
