@@ -8,7 +8,7 @@ from aiohttp import ClientSession, ClientTimeout
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl
 
-from app import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
+from constants import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
 
 crc16 = crcmod.predefined.Crc('crc-16')
 crc32 = crcmod.predefined.Crc('crc-32')

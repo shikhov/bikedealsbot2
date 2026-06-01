@@ -27,15 +27,12 @@ from webapp.routes import list_handler, api_list_handler, api_delete_handler
 import parsing
 
 from config import CONNSTRING, DBNAME
+from constants import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
 
 WEBAPP_PATH = os.getenv('WEBAPP_PATH')
 WEBAPP_HOST = os.getenv('WEBAPP_HOST')
 WEBAPP_URL = f'https://{WEBAPP_HOST}/{WEBAPP_PATH}'
 PORT = os.getenv('PORT')
-
-STATUS_OK = 0
-STATUS_TIMEOUTERROR = 1
-STATUS_PARSINGERROR = 2
 
 db = AsyncMongoClient(CONNSTRING)[DBNAME]
 
