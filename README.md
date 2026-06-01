@@ -7,6 +7,7 @@
 * tradeinn.com
 * bike24.com
 * all4cycling.com
+* lordgun.com
 
 ## Реализация
 * Python 3.10+
