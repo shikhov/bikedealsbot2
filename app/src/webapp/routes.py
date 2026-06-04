@@ -4,10 +4,10 @@ from aiohttp.web_fileresponse import FileResponse
 from aiohttp.web_request import Request
 from aiohttp.web_response import json_response
 
-from pymongo import DeleteOne
-
 from aiogram import Bot
 from aiogram.utils.web_app import safe_parse_webapp_init_data
+
+# from app.src.repositories import TrackedSkuRepository
 
 async def list_handler(request: Request):
     return FileResponse(Path(__file__).parent.resolve() / 'html/list.html')
@@ -24,14 +24,13 @@ async def api_list_handler(request: Request):
 
     chat_id = str(webapp_data.user.id)
     items = []
-    db = request.app['db']
-    cursor = db.sku.find({'chat_id': chat_id})
-    for doc in await cursor.to_list():
+    sku_repository = request.app['sku_repository']
+    async for sku in sku_repository.find({'chat_id': chat_id}):
         items.append({
-            'name': doc['name'],
-            'variant': doc['variant'],
-            'store': doc['store'],
-            'code': doc['_id']
+            'name': sku.name,
+            'variant': sku.variant,
+            'store': sku.store,
+            'code': sku.doc_id
         })
     
     return json_response(data=items)
@@ -46,12 +45,11 @@ async def api_delete_handler(request: Request):
     except ValueError:
         return json_response({"ok": False, "error": "Unauthorized"}, status=401)
 
-    db = request.app['db']
+    sku_repository = request.app['sku_repository']
     chat_id = str(webapp_data.user.id)
-    bulk_request = [DeleteOne({'_id': item, 'chat_id': chat_id}) for item in jsondata['items']]
 
     try:
-        await db.sku.bulk_write(bulk_request, ordered=False)
+        await sku_repository.delete_by_ids(chat_id, jsondata['items'])
     except Exception:
         return json_response({"ok": False, "err": "Delete error"}, status=400)
 

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import re
-import os
 from hashlib import md5
 from datetime import datetime
 from time import time
@@ -20,146 +19,36 @@ from aiogram.types import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone
-from pymongo import AsyncMongoClient, UpdateOne
 from aiohttp import web
 from webapp.routes import list_handler, api_list_handler, api_delete_handler
 
-import parsing
+from config import PORT, WEBAPP_URL
+from database import close_database, db
+from models import Sku
+from repositories import ProductRepository, SettingsRepository, SkuRepository
+from settings import AppSettings
 
-from config import CONNSTRING, DBNAME
-from constants import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
-
-WEBAPP_PATH = os.getenv('WEBAPP_PATH')
-WEBAPP_HOST = os.getenv('WEBAPP_HOST')
-WEBAPP_URL = f'https://{WEBAPP_HOST}/{WEBAPP_PATH}'
-PORT = os.getenv('PORT')
-
-db = AsyncMongoClient(CONNSTRING)[DBNAME]
+settings: AppSettings
+settings_repository = SettingsRepository(db)
+sku_repository = SkuRepository(db)
+product_repository: ProductRepository
 
 
 class IsAdmin(BaseFilter):
     async def __call__(self, message: Message) -> bool:
-        return message.from_user.id == ADMINCHATID
+        return message.from_user.id == settings.admin_chat_id
 
 
-class Product:
-    def __init__(self, data, source):
-        self.variants = data
-        self.source = source
-        self.id = None
-        self.first_skuid = None
-        self.name = None
-        self.store = None
-        self.var_count = 0
+async def load_settings():
+    global settings, product_repository
 
-        if data:
-            first_sku = list(data.values())[0]
-            self.id = first_sku['prodid']
-            self.first_skuid = list(data.keys())[0]
-            self.name = first_sku['name']
-            self.store = first_sku['store']
-            self.var_count = len(data)
-
-    @classmethod
-    async def get(cls, store, url):
-        tsexpired = int(time()) - CACHELIFETIME * 60
-        query = {'url': url, 'timestamp': {'$gt': tsexpired}}
-        doc = await db.skucache.find_one(query)
-        if doc:
-            return cls(data=doc['variants'], source='cache')
-
-        parseFunction = getattr(parsing, 'parse' + store)
-        result = await parseFunction(url, HTTPTIMEOUT)
-        await cls._cache(url, result)
-        return cls(data=result['variants'], source='web')
-
-    @staticmethod
-    async def _cache(url, result):
-        if result['status'] == STATUS_TIMEOUTERROR:
-            return
-
-        variants = result['variants']
-        if variants:
-            first_sku = list(variants.values())[0]
-            docid = first_sku['store'] + '_' + first_sku['prodid']
-            query = {'_id': docid}
-        else:
-            query = {'url': url}
-
-        data = {
-            'variants': variants,
-            'timestamp': int(time()),
-            'url': url
-        }
-        await db.skucache.update_one(query, {'$set': data}, upsert=True)
-
-    def getSkuAddList(self):
-        text_array = []
-        text_array.append(self.name)
-        for skuid, sku in self.variants.items():
-            sku['skuid'] = skuid
-            line = getSkuString(sku, ['icon', 'price'], action='add')
-            text_array.append(line)
-
-        return text_array
-
-    def hasSku(self, skuid):
-        if not self.variants:
-            return False
-        if skuid not in self.variants:
-            return False
-        return True
-
-
-TOKEN = None
-ADMINCHATID = None
-BESTDEALSCHATID = None
-BESTDEALSMINPERCENTAGE = None
-BESTDEALSWARNPERCENTAGE = None
-BESTDEALSMINVALUE = None
-CACHELIFETIME = None
-ERRORMINTHRESHOLD = None
-ERRORMAXDAYS = None
-MAXITEMSPERUSER = None
-CHECKINTERVAL = None
-LOGCHATID = None
-LOGFILTER = None
-BANNERSTART = None
-BANNERHELP = None
-BANNERDONATE = None
-STORES = None
-DEBUG = None
-HTTPTIMEOUT = None
-REQUESTDELAY = None
-
-async def loadSettings():
-    global TOKEN, ADMINCHATID, BESTDEALSCHATID, BESTDEALSMINPERCENTAGE, BESTDEALSMINVALUE
-    global BESTDEALSWARNPERCENTAGE, CACHELIFETIME, ERRORMINTHRESHOLD, ERRORMAXDAYS
-    global MAXITEMSPERUSER, CHECKINTERVAL, LOGCHATID, BANNERSTART, BANNERHELP
-    global BANNERDONATE, STORES, DEBUG, HTTPTIMEOUT, REQUESTDELAY, LOGFILTER
-
-    settings = await db.settings.find_one({'_id': 'settings'})
-
-    TOKEN = settings['TOKEN']
-    ADMINCHATID = settings['ADMINCHATID']
-    BESTDEALSCHATID = settings['BESTDEALSCHATID']
-    BESTDEALSMINPERCENTAGE = settings['BESTDEALSMINPERCENTAGE']
-    BESTDEALSWARNPERCENTAGE = settings['BESTDEALSWARNPERCENTAGE']
-    BESTDEALSMINVALUE = settings['BESTDEALSMINVALUE']
-    CACHELIFETIME = settings['CACHELIFETIME']
-    ERRORMINTHRESHOLD = settings['ERRORMINTHRESHOLD']
-    ERRORMAXDAYS = settings['ERRORMAXDAYS']
-    MAXITEMSPERUSER = settings['MAXITEMSPERUSER']
-    CHECKINTERVAL = settings['CHECKINTERVAL']
-    LOGCHATID = settings['LOGCHATID']
-    LOGFILTER = settings['LOGFILTER']
-    BANNERSTART = settings['BANNERSTART']
-    BANNERHELP = settings['BANNERHELP']
-    BANNERDONATE = settings['BANNERDONATE']
-    STORES = settings['STORES']
-    DEBUG = settings['DEBUG']
-    HTTPTIMEOUT = settings['HTTPTIMEOUT']
-    REQUESTDELAY = settings['REQUESTDELAY']
+    settings = await settings_repository.get()
+    Sku.configure_display(settings.error_min_threshold, settings.stores)
+    product_repository = ProductRepository(
+        db,
+        settings.cache_lifetime,
+        settings.http_timeout
+    )
 
 
 class LoggingMiddleware(BaseMiddleware):
@@ -205,23 +94,23 @@ async def processException(e: Exception, chat_id: str):
 
 
 async def logMessage(message: Message):
-    if not LOGCHATID:
+    if not settings.log_chat_id:
         return
-    if message.from_user.id == ADMINCHATID:
+    if message.from_user.id == settings.admin_chat_id:
         return
     if not message.text:
         return
-    if message.text in LOGFILTER:
+    if message.text in settings.log_filter:
         return
 
     username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
     logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
-    await bot.send_message(LOGCHATID, logentry)
+    await bot.send_message(settings.log_chat_id, logentry)
 
 
 def getStoreUrls():
     arr = []
-    for store in STORES.values():
+    for store in settings.stores.values():
         status = '' if store['active'] else ' <i>(временно недоступен)</i>'
         arr.append(store['url'] + status)
     return arr
@@ -229,7 +118,7 @@ def getStoreUrls():
 
 @dp.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def processCmdStart(message: Message):
-    msg = substituteVars(BANNERSTART)
+    msg = substituteVars(settings.banner_start)
     await message.answer(msg)
 
     chat_id = str(message.from_user.id)
@@ -240,7 +129,7 @@ async def processCmdStart(message: Message):
         'enable': True
     }
     await db.users.update_one({'_id' : chat_id }, {'$set': data}, upsert=True)
-    await db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
+    await sku_repository.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
 
 
 async def broadcast(message: Message, text, docs, pin=False):
@@ -253,7 +142,8 @@ async def broadcast(message: Message, text, docs, pin=False):
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
                 
-        if text_hash in doc.setdefault('broadcasts', []): continue
+        if text_hash in doc.setdefault('broadcasts', []):
+            continue
 
         try:
             sent_message = await bot.send_message(chat_id=doc['_id'], text=text)
@@ -333,13 +223,13 @@ async def processCmdBroadcastByStore(message: Message, command: CommandObject):
 
 @dp.message(Command('reload'), IsAdmin())
 async def processCmdReload(message: Message):
-    await loadSettings()
+    await load_settings()
     await message.answer('Settings successfully reloaded')
 
 
 @dp.message(F.text.regexp(r'https?://', mode='search'), F.chat.type == ChatType.PRIVATE)
 async def processURLMsg(message: Message):
-    for store, attrs in STORES.items():
+    for store, attrs in settings.stores.items():
         if re.search(attrs['url_regex'], message.text):
             break
     else:
@@ -415,9 +305,7 @@ async def processCmdAdd(message: Message):
 async def processCmdDel(message: Message):
     chat_id = str(message.from_user.id)
     docid = message.text.replace('/del', chat_id).upper()
-    query = {'_id': docid}
-    result = await db.sku.delete_one(query)
-    if result.deleted_count == 1:
+    if await sku_repository.delete(docid):
         await message.answer('Удалено')
         return
     await message.answer('Какая-то ошибка 😧')
@@ -425,13 +313,13 @@ async def processCmdDel(message: Message):
 
 @dp.message(Command('help'), F.chat.type == ChatType.PRIVATE)
 async def processCmdHelp(message: Message):
-    msg = substituteVars(BANNERHELP)
+    msg = substituteVars(settings.banner_help)
     await message.answer(msg)
 
 
 @dp.message(Command('donate'), F.chat.type == ChatType.PRIVATE)
 async def processCmdDonate(message: Message):
-    await message.answer(BANNERDONATE)
+    await message.answer(settings.banner_donate)
 
 
 @dp.message(Command('list'), F.chat.type == ChatType.PRIVATE)
@@ -439,8 +327,8 @@ async def processCmdList(message: Message):
     text_array = []
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
-    async for doc in db.sku.find(query):
-        line = getSkuString(doc, ['store', 'url', 'icon', 'price'], action='del')
+    async for sku in sku_repository.find(query):
+        line = sku.get_string(['store', 'url', 'icon', 'price', 'del'])
         text_array.append(line)
 
     if text_array:
@@ -467,7 +355,7 @@ async def processCmdStat(message: Message):
 
     usersall = await db.users.count_documents({})
     usersactive = await db.users.count_documents({'enable': True})
-    skuall = await db.sku.count_documents({})
+    skuall = await sku_repository.count()
     
     pipeline = [
         {
@@ -500,8 +388,8 @@ async def processCmdStat(message: Message):
     except Exception:
         userswsku = 0
         
-    skuactive = await db.sku.count_documents({'enable': True})
-    unique_urls = len(await db.sku.distinct('url', {'enable': True}))
+    skuactive = await sku_repository.count({'enable': True})
+    unique_urls = len(await sku_repository.distinct('url', {'enable': True}))
 
     msg = ''
     msg += f'<b>Total users:</b> {usersall}\n'
@@ -511,8 +399,8 @@ async def processCmdStat(message: Message):
     msg += f'<b>Active SKU:</b> {skuactive}\n'
     msg += f'<b>Unique active URLs:</b> {unique_urls}\n'
 
-    for key in STORES.keys():
-        num = await db.sku.count_documents({'store': key})
+    for key in settings.stores.keys():
+        num = await sku_repository.count({'store': key})
         msg += f'<b>{key}:</b> {num}\n'
 
     TOPNUMBER = 10
@@ -552,11 +440,12 @@ async def processCmdStat(message: Message):
 @dp.message(F.chat.type == ChatType.PRIVATE)
 async def processSearch(message: Message):
     text = message.text
-    if not text: return
+    if not text:
+        return
 
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
-    if await db.sku.count_documents(query) == 0:
+    if await sku_repository.count(query) == 0:
         await message.answer('⚠️ Ваш список пуст, поиск невозможен')
         return
 
@@ -568,8 +457,8 @@ async def processSearch(message: Message):
 
     query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
     text_array = []
-    async for doc in db.sku.find(query):
-        line = getSkuString(doc, ['store', 'url', 'icon', 'price'], action='del')
+    async for sku in sku_repository.find(query):
+        line = sku.get_string(['store', 'url', 'icon', 'price', 'del'])
         text_array.append(line)
 
     header = f'Результаты поиска по строке <b>{text}</b>:'
@@ -584,11 +473,10 @@ async def reply_or_edit_msg(text, message: Message):
         await message.reply(text)
 
 
-
 async def showVariants(store, url, message: Message):
     sent_msg = await message.reply('🔎 Ищу информацию о товаре...')
 
-    prod = await Product.get(store, url)
+    prod = await product_repository.get(store, url)
     if prod.var_count == 0:
         await sent_msg.edit_text('Не смог найти цену 😧')
     elif prod.var_count == 1:
@@ -604,50 +492,42 @@ async def addVariant(store, prodid, skuid, message: Message):
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
-    maxitems = user.get('maxitems', MAXITEMSPERUSER)
+    maxitems = user.get('maxitems', settings.max_items_per_user)
     query = {'chat_id': chat_id}
-    if await db.sku.count_documents(query) >= maxitems:
+    if await sku_repository.count(query) >= maxitems:
         await reply_or_edit_msg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', message)
         return
 
     docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
-    if await db.sku.find_one({'_id': docid}):
+    if await sku_repository.exists(docid):
         await reply_or_edit_msg('️☝️ Товар уже есть в вашем списке', message)
         return
 
-    url = await getURL(store, prodid)
+    url = await product_repository.get_url(store, prodid)
     if not url:
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
-    prod = await Product.get(store, url)
-    if not prod.hasSku(skuid):
+    prod = await product_repository.get(store, url)
+    if not prod.has_sku(skuid):
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
-    data = prod.variants[skuid].copy()
-    data['_id'] = docid
-    data['store_prodid'] = data['store'] + '_' + data['prodid']
-    data['chat_id'] = chat_id
-    data['skuid'] = skuid
-    data['errors'] = 0
-    data['enable'] = True
-    data['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
-    data['lastcheckts'] = int(time())
-    data['lastgoodts'] = int(time())
-    data['instock_prev'] = None
-    data['price_prev'] = None
-    await db.sku.insert_one(data)
+    sku = Sku(variant=prod.variants[skuid])
+    sku.doc_id = docid
+    sku.store_prodid = sku.store + '_' + sku.prodid
+    sku.chat_id = chat_id
+    sku.errors = 0
+    sku.enable = True
+    sku.lastcheck = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
+    sku.lastcheckts = int(time())
+    sku.lastgoodts = int(time())
+    sku.instock_prev = None
+    sku.price_prev = None
+    await sku_repository.insert(sku)
 
-    dispname = data['variant'] or data['name']
+    dispname = sku.variant or sku.name
     await reply_or_edit_msg(dispname + '\n✔️ Добавлено к отслеживанию', message)
-
-
-async def getURL(store, prodid):
-    doc = await db.skucache.find_one({'_id': store + '_' + prodid})
-    if doc:
-        return doc['url']
-    return None
 
 
 def substituteVars(text):
@@ -676,26 +556,19 @@ async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
         await sendOrEditMsg()
 
 
-
-
-async def clearSKUCache():
-    tsexpired = int(time()) - CACHELIFETIME * 60
-    query = {'timestamp': {'$lt': tsexpired}}
-    await db.skucache.delete_many(query)
-
-
 async def removeInvalidSKU():
-    banner = f'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более {ERRORMAXDAYS} дней:'
-    tsexpired = int(time()) - ERRORMAXDAYS * 24 * 3600
+    banner = f'ℹ️ Следующие позиции были удалены из вашего списка в связи с недоступностью более {settings.error_max_days} дней:'
+    tsexpired = int(time()) - settings.error_max_days * 24 * 3600
     query = {'lastgoodts': {'$lt': tsexpired}}
     messages = {}
-    async for doc in db.sku.find(query):
-        user = await db.users.find_one({'_id': doc['chat_id']})
-        if not user['enable']: continue
-        skustring = getSkuString(doc, ['store', 'url'])
-        messages.setdefault(doc['chat_id'], [banner]).append(skustring)
+    async for sku in sku_repository.find(query):
+        user = await db.users.find_one({'_id': sku.chat_id})
+        if not user['enable']:
+            continue
+        line = sku.get_string(['store', 'url'])
+        messages.setdefault(sku.chat_id, [banner]).append(line)
 
-    await db.sku.delete_many(query)
+    await sku_repository.delete_many(query)
 
     for chat_id in messages:
         try:
@@ -703,183 +576,141 @@ async def removeInvalidSKU():
         except Exception as e:
             await processException(e, chat_id)
         await asyncio.sleep(0.1)
-
-
-def getSkuString(sku, options, action=None):
-    instock = sku['instock']
-    url = sku['url']
-    name = sku['name']
-    variant = sku['variant']
-    price = sku['price']
-    price_prev = sku.get('price_prev')
-    currency = sku['currency']
-    store = sku['store']
-    prodid = sku['prodid']
-    skuid = sku['skuid']
-    key = store.lower() + '_' + prodid + '_' + skuid
-    errors = sku.get('errors', 0)
-
-    storename = ''
-    urlname = ''
-    icon = ''
-    pricetxt = ''
-    pricetxt_prev = ''
-    actiontxt = ''
-
-    if 'url' in options:
-        urlname = f'<a href="{url}">{name}</a>\n'
-    if 'icon' in options:
-        icon = '✅ ' if instock else '🚫 '
-        if errors > ERRORMINTHRESHOLD:
-            icon = '⚠️ '
-        if not STORES[store]['active']:
-            icon = '⏳ '
-    if 'store' in options:
-        storename = f'<code>[{store}]</code> '
-    if 'price' in options:
-        pricetxt = f' <b>{price} {currency}</b>'
-    if 'price_prev' in options:
-        pricetxt_prev = f' (было: {price_prev} {currency})'
-    
-    if action == 'add':
-        actiontxt = f'\n<i>Добавить: /add_{key}</i>'
-    if action == 'del':        
-        actiontxt = f'\n<i>Удалить: /del_{key}</i>'
-
-    return storename + urlname + icon + (variant + pricetxt + pricetxt_prev).strip() + actiontxt
-
-
 
 
 async def notify():
     def addMsg(msg):
-        messages.setdefault(doc['chat_id'], []).append(msg)
+        messages.setdefault(sku.chat_id, []).append(msg)
 
     def processBestDeals():
-        price_prev = doc['price_prev']
-        price = doc['price']
-        if price_prev == 0: return
+        price_prev = sku.price_prev
+        price = sku.price
+        if price_prev == 0:
+            return
         percents = int((1 - price/float(price_prev))*100)
         value = price_prev - price
-        minvalue = BESTDEALSMINVALUE.get(doc['currency'], 0)
-        if percents >= BESTDEALSMINPERCENTAGE and value >= minvalue:
-            bdkey = doc['store_prodid'] + '_' + doc['skuid']
+        minvalue = settings.best_deals_min_value.get(sku.currency, 0)
+        if percents >= settings.best_deals_min_percentage and value >= minvalue:
+            bdkey = sku.store_prodid + '_' + sku.id
             bestdeals[bdkey] = skustring + ' ' + str(percents) + '%'
-            if percents >= BESTDEALSWARNPERCENTAGE:
+            if percents >= settings.best_deals_warn_percentage:
                 bestdeals[bdkey] += '‼️'
 
     messages = {}
     bestdeals = {}
-    bulk_request = []
+    notification_sku_ids = []
 
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
-    async for doc in db.sku.find(query):
-        if doc['instock_prev'] is not None:
-            skustring = getSkuString(doc, ['store', 'url', 'price'])
-            if doc['instock']:
+    async for sku in sku_repository.find(query):
+        if sku.instock_prev is not None:
+            skustring = sku.get_string(['store', 'url', 'price'])
+            if sku.instock:
                 addMsg('✅ Снова в наличии!\n' + skustring)
-            if not doc['instock']:
+            if not sku.instock:
                 addMsg('🚫 Не в наличии\n' + skustring)
-        elif doc['price_prev'] is not None and doc['instock']:
-            skustring = getSkuString(doc, ['store', 'url', 'price', 'price_prev'])
-            if doc['price'] < doc['price_prev']:
+        elif sku.price_prev is not None and sku.instock:
+            skustring = sku.get_string(['store', 'url', 'price', 'price_prev'])
+            if sku.price < sku.price_prev:
                 addMsg('📉 Снижение цены!\n' + skustring)
                 processBestDeals()
-            if doc['price'] > doc['price_prev']:
+            if sku.price > sku.price_prev:
                 addMsg('📈 Повышение цены\n' + skustring)
 
-        bulk_request.append(
-            UpdateOne(
-                { '_id': doc['_id'] },
-                { '$set': {'price_prev': None, 'instock_prev': None} }
-            )
-        )
+        notification_sku_ids.append(sku.doc_id)
 
     for chat_id in messages:
         try:
             await paginatedTgMsg(messages[chat_id], chat_id)
         except Exception as e:
             await processException(e, chat_id)
-        if DEBUG and LOGCHATID:
-            await paginatedTgMsg(messages[chat_id], LOGCHATID)
+        if settings.debug and settings.log_chat_id:
+            await paginatedTgMsg(messages[chat_id], settings.log_chat_id)
         await asyncio.sleep(0.1)
 
-    if BESTDEALSCHATID:
-        await paginatedTgMsg(bestdeals.values(), BESTDEALSCHATID)
+    if settings.best_deals_chat_id:
+        await paginatedTgMsg(bestdeals.values(), settings.best_deals_chat_id)
 
-    if bulk_request:
-        await db.sku.bulk_write(bulk_request)
+    await sku_repository.clear_notifications(notification_sku_ids)
 
 
 async def disableUser(chat_id):
     await db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
-    await db.sku.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
+    await sku_repository.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
 
 
 async def checkSKU():
     now = int(time())
-    query = {'enable': True, 'lastcheckts': {'$lt': now - CHECKINTERVAL * 60}}
+    query = {'enable': True, 'lastcheckts': {'$lt': now - settings.check_interval * 60}}
     prodlist = set()
-    async for doc in db.sku.find(query):
-        prodlist.add(doc['store_prodid'])
+    async for sku in sku_repository.find(query):
+        prodlist.add(sku.store_prodid)
     
     prodlist = list(prodlist)
     if not prodlist:
         return
 
-    cursor = db.sku.find({'store_prodid': {'$in': prodlist}, 'enable': True}).sort('store_prodid')
-    async for doc in cursor:
-        if not STORES[doc['store']]['active']: continue
+    query = {'store_prodid': {'$in': prodlist}, 'enable': True}
+    async for sku in sku_repository.find(query, sort='store_prodid'):
+        if not settings.stores[sku.store]['active']:
+            continue
 
-        logging.info(doc['_id'] + ' [' + doc['name'] + '][' + doc['variant'] + ']')
+        logging.info(sku.doc_id + ' [' + sku.name + '][' + sku.variant + ']')
 
-        prod = await Product.get(doc['store'], doc['url'])
-        if prod.hasSku(doc['skuid']):
-            sku = prod.variants[doc['skuid']]
-            if sku['instock'] != doc['instock']:
-                doc['instock_prev'] = doc['instock']
+        prod = await product_repository.get(sku.store, sku.url)
+        if prod.has_sku(sku.id):
+            variant = prod.variants[sku.id]
+            if variant.instock != sku.instock:
+                sku.instock_prev = sku.instock
 
-            price_threshold = STORES[doc['store']]['price_threshold']
-            if sku['currency'] == doc['currency']:
-                if doc['price']*price_threshold < abs(sku['price'] - doc['price']):
-                    doc['price_prev'] = doc['price']
+            price_threshold = settings.stores[sku.store]['price_threshold']
+            if variant.currency == sku.currency:
+                if sku.price * price_threshold < abs(variant.price - sku.price):
+                    sku.price_prev = sku.price
 
-            doc['instock'] = sku['instock']
-            doc['currency'] = sku['currency']
-            doc['price'] = sku['price']
-            doc['variant'] = sku['variant']
-            doc['errors'] = 0
-            doc['lastgoodts'] = int(time())
+            sku.instock = variant.instock
+            sku.currency = variant.currency
+            sku.price = variant.price
+            sku.variant = variant.variant
+            sku.errors = 0
+            sku.lastgoodts = int(time())
         else:
-            doc['errors'] += 1
+            sku.errors += 1
 
-        doc['lastcheck'] = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
-        doc['lastcheckts'] = int(time())
+        sku.lastcheck = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
+        sku.lastcheckts = int(time())
         try:
-            await db.sku.update_one({'_id': doc['_id']}, {'$set': doc})
-        except Exception:
-            pass
+            await sku_repository.save(sku)
+        except Exception as e:
+            logging.error(f'Error updating SKU: {e}')
         if prod.source == 'web':
-            await asyncio.sleep(REQUESTDELAY)
+            await asyncio.sleep(settings.request_delay)
 
 
 async def errorsMonitor():
     bad = defaultdict(int)
     good = defaultdict(int)
-    query = {'lastcheckts': {'$gt': int(time()) - CHECKINTERVAL*60}}
+    query = {'lastcheckts': {'$gt': int(time()) - settings.check_interval * 60}}
     
-    async for doc in db.sku.find(query):
-        if doc['errors'] == 0:
-            good[doc['store']] += 1
+    async for sku in sku_repository.find(query):
+        if sku.errors == 0:
+            good[sku.store] += 1
         else:
-            bad[doc['store']] += 1
+            bad[sku.store] += 1
 
     for store in set(list(good) + list(bad)):
-        if not STORES[store]['active']: continue
+        if not settings.stores[store]['active']:
+            continue
         good_count = good[store]
         bad_count = bad[store]
         if good_count == 0 or bad_count/float(good_count) > 0.8:
-            await bot.send_message(ADMINCHATID, f'Problem with {store}!\nGood: {good_count}\nBad: {bad_count}')
+            await bot.send_message(
+                settings.admin_chat_id,
+                f'Problem with {store}!\nGood: {good_count}\nBad: {bad_count}'
+            )
+
+
+async def clear_sku_cache():
+    await product_repository.clear_sku_cache()
 
 
 def create_webapp_server():
@@ -894,20 +725,19 @@ def create_webapp_server():
 
 async def main():
     # settings
-    await loadSettings()
+    await load_settings()
 
     # Initialize bot and dispatcher
     global bot
     botProperties = DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
-    bot = Bot(token=TOKEN, default=botProperties)
+    bot = Bot(token=settings.token, default=botProperties)
 
     web_app = create_webapp_server()
     web_app['bot'] = bot
-    web_app['db'] = db
-    web_app['ADMINCHATID'] = ADMINCHATID
+    web_app['sku_repository'] = sku_repository
     web_runner = web.AppRunner(web_app)
     await web_runner.setup()
-    site = web.TCPSite(web_runner, '0.0.0.0', int(PORT))
+    site = web.TCPSite(web_runner, '0.0.0.0', PORT)
     await site.start()
 
     scheduler = AsyncIOScheduler(job_defaults={'misfire_grace_time': None})
@@ -915,11 +745,16 @@ async def main():
 
     scheduler.add_job(checkSKU, 'interval', minutes=5)
     scheduler.add_job(notify, 'interval', minutes=5)
-    scheduler.add_job(errorsMonitor, 'interval', minutes=CHECKINTERVAL)
-    scheduler.add_job(clearSKUCache, 'cron', day_of_week='mon', hour=0, minute=0)
+    scheduler.add_job(errorsMonitor, 'interval', minutes=settings.check_interval)
+    scheduler.add_job(clear_sku_cache, 'cron', day_of_week='mon', hour=0, minute=0)
     scheduler.add_job(removeInvalidSKU, 'cron', day=1, hour=14, minute=0)
 
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        scheduler.shutdown()
+        await web_runner.cleanup()
+        await close_database()
 
 
 if __name__ == '__main__':
