@@ -196,23 +196,23 @@ async def processCmdReload(message: Message):
 
 @dp.message(F.text.regexp(r'https?://', mode='search'), F.chat.type == ChatType.PRIVATE)
 async def processURLMsg(message: Message):
-    for store, store_settings in settings.stores.items():
-        if re.search(store_settings.url_regex, message.text):
+    for store in settings.stores.values():
+        if re.search(store.url_regex, message.text):
             break
     else:
         await message.reply('⚠️ Этот сайт не поддерживается. Список поддерживаемых смотрите в /help')
         return
 
-    if not store_settings.active:
+    if not store.active:
         await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
         return
 
-    url = processURL(store, message.text)
+    url = processURL(store.name, message.text)
     if not url:
         await message.reply('🤷‍♂️ Не могу понять. Кажется, это не ссылка на товар')
         return
 
-    await showVariants(store, url, message)
+    await showVariants(store.name, url, message)
 
 
 def processURL(store, text):
@@ -559,8 +559,8 @@ async def checkSKU():
 
     query = {'store_prodid': {'$in': prodlist}, 'enable': True}
     async for sku in sku_repository.find(query, sort='store_prodid'):
-        store_settings = settings.stores[sku.store]
-        if not store_settings.active:
+        store = settings.stores[sku.store]
+        if not store.active:
             continue
 
         logging.info(sku.doc_id + ' [' + sku.name + '][' + sku.variant + ']')
@@ -572,7 +572,7 @@ async def checkSKU():
                 sku.instock_prev = sku.instock
             
             if variant.currency == sku.currency:
-                if sku.price * store_settings.price_threshold < abs(variant.price - sku.price):
+                if sku.price * store.price_threshold < abs(variant.price - sku.price):
                     sku.price_prev = sku.price
 
             sku.instock = variant.instock
