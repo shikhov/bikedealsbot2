@@ -421,21 +421,9 @@ async def addVariant(store, prodid, skuid, message: Message):
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
 
-    sku = Sku(variant=prod.variants[skuid])
-    sku.doc_id = docid
-    sku.store_prodid = sku.store + '_' + sku.prodid
-    sku.chat_id = user.id
-    sku.errors = 0
-    sku.enable = True
-    sku.lastcheck = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
-    sku.lastcheckts = int(time())
-    sku.lastgoodts = int(time())
-    sku.instock_prev = None
-    sku.price_prev = None
+    sku = Sku.from_variant(prod.variants[skuid], user.id)
     await sku_repository.insert(sku)
-
-    dispname = sku.variant or sku.name
-    await reply_or_edit_msg(dispname + '\n✔️ Добавлено к отслеживанию', message)
+    await reply_or_edit_msg(f'{sku.variant or sku.name}\n✔️ Добавлено к отслеживанию', message)
 
 
 def substituteVars(text):

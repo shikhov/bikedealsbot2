@@ -33,7 +33,7 @@ class SkuRepository:
         if sort is not None:
             cursor = cursor.sort(sort)
         async for document in cursor:
-            yield Sku(document)
+            yield Sku.from_document(document)
 
     async def count(self, query: dict | None = None) -> int:
         return await self.collection.count_documents(query or {})

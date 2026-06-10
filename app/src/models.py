@@ -1,5 +1,10 @@
+from datetime import datetime
+from time import time
 from typing import Dict
+
 from aiogram.types import User as TgUser
+from pytz import timezone
+
 from settings import StoreSettings
 
 class User:
@@ -120,22 +125,71 @@ class Sku(Variant):
     error_min_threshold = 0
     stores: dict[str, StoreSettings] = {}
 
-    def __init__(self, data: dict | None = None, variant: Variant | None = None):
-        if data:
-            super().__init__(data)
-            self.doc_id: str = data['_id']
-            self.chat_id: str = data['chat_id']
-            self.errors: int = data['errors']
-            self.enable: bool = data['enable']
-            self.lastcheck: str = data['lastcheck']
-            self.lastcheckts: int = data['lastcheckts']
-            self.lastgoodts: int = data['lastgoodts']
-            self.instock_prev: bool | None = data['instock_prev']
-            self.price_prev: int | None = data['price_prev']
-            self.store_prodid: str = data['store_prodid']
+    def __init__(
+        self,
+        variant: Variant,
+        doc_id: str,
+        chat_id: str,
+        errors: int,
+        enable: bool,
+        lastcheck: str,
+        lastcheckts: int,
+        lastgoodts: int,
+        instock_prev: bool | None,
+        price_prev: int | None
+    ):
+        self.store = variant.store
+        self.prodid = variant.prodid
+        self.id = variant.id
+        self.url = variant.url
+        self.name = variant.name
+        self.variant = variant.variant
+        self.price = variant.price
+        self.currency = variant.currency
+        self.instock = variant.instock
+        self.key = variant.key
 
-        if variant:
-            self.__dict__.update(variant.__dict__)
+        self.doc_id = doc_id
+        self.chat_id = chat_id
+        self.errors = errors
+        self.enable = enable
+        self.lastcheck = lastcheck
+        self.lastcheckts = lastcheckts
+        self.lastgoodts = lastgoodts
+        self.instock_prev = instock_prev
+        self.price_prev = price_prev
+        self.store_prodid = self.store + '_' + self.prodid
+
+    @classmethod
+    def from_document(cls, data: dict) -> 'Sku':
+        return cls(
+            variant=Variant(data),
+            doc_id=data['_id'],
+            chat_id=data['chat_id'],
+            errors=data['errors'],
+            enable=data['enable'],
+            lastcheck=data['lastcheck'],
+            lastcheckts=data['lastcheckts'],
+            lastgoodts=data['lastgoodts'],
+            instock_prev=data['instock_prev'],
+            price_prev=data['price_prev']
+        )
+
+    @classmethod
+    def from_variant(cls, variant: Variant, user_id: str) -> 'Sku':
+        timestamp = int(time())
+        return cls(
+            variant=variant,
+            doc_id=f'{user_id}_{variant.store}_{variant.prodid}_{variant.id}',
+            chat_id=user_id,
+            errors=0,
+            enable=True,
+            lastcheck=datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M'),
+            lastcheckts=timestamp,
+            lastgoodts=timestamp,
+            instock_prev=None,
+            price_prev=None
+        )
 
     @classmethod
     def configure(cls, error_min_threshold: int, stores: dict[str, StoreSettings]):
