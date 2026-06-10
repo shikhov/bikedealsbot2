@@ -83,9 +83,9 @@ class LoggingMiddleware(BaseMiddleware):
             return
         if message.text in settings.log_filter:
             return
-
-        username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-        logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
+        
+        user = User.from_aiogram_user(message.from_user)        
+        logentry = '<b>' + user.display_name + ':</b> ' + message.text
         await bot.send_message(settings.log_chat_id, logentry)
 
 
