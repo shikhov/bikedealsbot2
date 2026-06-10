@@ -1,5 +1,6 @@
 from typing import Dict
 from aiogram.types import User as TgUser
+from settings import StoreSettings
 
 class User:
     def __init__(
@@ -117,7 +118,7 @@ class Variant:
 
 class Sku(Variant):
     error_min_threshold = 0
-    stores = {}
+    stores: dict[str, StoreSettings] = {}
 
     def __init__(self, data: dict | None = None, variant: Variant | None = None):
         if data:
@@ -137,7 +138,7 @@ class Sku(Variant):
             self.__dict__.update(variant.__dict__)
 
     @classmethod
-    def configure(cls, error_min_threshold: int, stores: dict):
+    def configure(cls, error_min_threshold: int, stores: dict[str, StoreSettings]):
         cls.error_min_threshold = error_min_threshold
         cls.stores = stores
 
@@ -145,7 +146,7 @@ class Sku(Variant):
         icon = '✅ ' if self.instock else '🚫 '
         if self.errors > self.error_min_threshold:
             icon = '⚠️ '
-        if not self.stores[self.store]['active']:
+        if not self.stores[self.store].active:
             icon = '⏳ '
         return icon
 

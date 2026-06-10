@@ -1,5 +1,13 @@
 from dataclasses import dataclass
 
+class StoreSettings:
+    def __init__(self, name: str, data: dict):
+        self.name = name
+        self.url = data['url']
+        self.url_regex = data['url_regex']
+        self.active = data['active']
+        self.price_threshold = data['price_threshold']
+
 
 @dataclass(frozen=True)
 class AppSettings:
@@ -19,17 +27,10 @@ class AppSettings:
     banner_start: str
     banner_help: str
     banner_donate: str
-    stores: dict
+    stores: dict[str, StoreSettings]
     debug: bool
     http_timeout: int
     request_delay: int
-
-    def get_store_urls(self) -> str:
-        urls = []
-        for store in self.stores.values():
-            status = '' if store['active'] else ' <i>(временно недоступен)</i>'
-            urls.append(store['url'] + status)
-        return '\n'.join(urls)
 
     @classmethod
     def from_document(cls, document: dict) -> 'AppSettings':
@@ -50,8 +51,15 @@ class AppSettings:
             banner_start=document['BANNERSTART'],
             banner_help=document['BANNERHELP'],
             banner_donate=document['BANNERDONATE'],
-            stores=document['STORES'],
+            stores={name: StoreSettings(name, data) for name, data in document['STORES'].items()},
             debug=document['DEBUG'],
             http_timeout=document['HTTPTIMEOUT'],
             request_delay=document['REQUESTDELAY']
         )
+
+    def get_store_urls(self) -> str:
+        urls = []
+        for store in self.stores.values():
+            status = '' if store.active else ' <i>(временно недоступен)</i>'
+            urls.append(store.url + status)
+        return '\n'.join(urls)

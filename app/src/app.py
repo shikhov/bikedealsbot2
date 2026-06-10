@@ -196,14 +196,14 @@ async def processCmdReload(message: Message):
 
 @dp.message(F.text.regexp(r'https?://', mode='search'), F.chat.type == ChatType.PRIVATE)
 async def processURLMsg(message: Message):
-    for store, attrs in settings.stores.items():
-        if re.search(attrs['url_regex'], message.text):
+    for store, store_settings in settings.stores.items():
+        if re.search(store_settings.url_regex, message.text):
             break
     else:
         await message.reply('⚠️ Этот сайт не поддерживается. Список поддерживаемых смотрите в /help')
         return
 
-    if not attrs['active']:
+    if not store_settings.active:
         await message.reply('😔 К сожалению, отслеживание этого сайта временно недоступно')
         return
 
@@ -559,7 +559,7 @@ async def checkSKU():
 
     query = {'store_prodid': {'$in': prodlist}, 'enable': True}
     async for sku in sku_repository.find(query, sort='store_prodid'):
-        if not settings.stores[sku.store]['active']:
+        if not settings.stores[sku.store].active:
             continue
 
         logging.info(sku.doc_id + ' [' + sku.name + '][' + sku.variant + ']')
@@ -570,7 +570,7 @@ async def checkSKU():
             if variant.instock != sku.instock:
                 sku.instock_prev = sku.instock
 
-            price_threshold = settings.stores[sku.store]['price_threshold']
+            price_threshold = settings.stores[sku.store].price_threshold
             if variant.currency == sku.currency:
                 if sku.price * price_threshold < abs(variant.price - sku.price):
                     sku.price_prev = sku.price
@@ -606,7 +606,7 @@ async def errorsMonitor():
             bad[sku.store] += 1
 
     for store in set(list(good) + list(bad)):
-        if not settings.stores[store]['active']:
+        if not settings.stores[store].active:
             continue
         good_count = good[store]
         bad_count = bad[store]
