@@ -179,7 +179,7 @@ class UserRepository:
         async for document in cursor:
             yield User.from_document(document)
 
-    async def create_if_not_exists(self, tg_user: TgUser) -> User:
+    async def create_if_not_exists(self, tg_user: TgUser):
         if not await self.find_one(tg_user.id):
             new_user = User.from_aiogram_user(tg_user)
             await self.save(new_user)
