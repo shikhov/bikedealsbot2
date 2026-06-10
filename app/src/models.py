@@ -1,4 +1,66 @@
 from typing import Dict
+from aiogram.types import User as TgUser
+
+class User:
+    def __init__(
+        self,
+        chat_id: str | int,
+        first_name: str,
+        last_name: str,
+        username: str,
+        enable: bool,
+        max_items: int | None = None,
+        broadcasts: list[str] | None = None,
+        data: dict | None = None
+    ):      
+        self.id: str = str(chat_id)
+        self.first_name: str = first_name
+        self.last_name: str = last_name
+        self.username: str = username
+        self.enable: bool = enable
+        self.max_items: int = max_items or self.max_items_per_user
+        self.broadcasts: list[str] = broadcasts or []
+        self.data: dict | None = data
+
+    @property
+    def full_name(self) -> str:
+        return self.first_name + ' ' + self.last_name if self.last_name else self.first_name
+    
+    @property
+    def display_name(self) -> str:
+        username = f' ({self.username})' if self.username else ''
+        return self.full_name + username
+
+    @property
+    def sku_count(self) -> int:
+        return self.data.get('sku_count', 0) if self.data else 0
+    
+    @classmethod
+    def configure(cls, max_items_per_user: int):
+        cls.max_items_per_user = max_items_per_user
+
+    @classmethod
+    def from_document(cls, data: dict):
+        return cls(
+            chat_id=data['_id'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            username=data['username'],
+            enable=data['enable'],
+            max_items=data.get('max_items'),
+            broadcasts=data.get('broadcasts'),
+            data=data
+        )
+    
+    @classmethod
+    def from_aiogram_user(cls, tg_user: TgUser):
+        return cls(
+            chat_id=tg_user.id,
+            first_name=tg_user.first_name,
+            last_name=tg_user.last_name,
+            username=tg_user.username,
+            enable=True
+        )
 
 
 class Variant:
@@ -75,7 +137,7 @@ class Sku(Variant):
             self.__dict__.update(variant.__dict__)
 
     @classmethod
-    def configure_display(cls, error_min_threshold: int, stores: dict):
+    def configure(cls, error_min_threshold: int, stores: dict):
         cls.error_min_threshold = error_min_threshold
         cls.stores = stores
 

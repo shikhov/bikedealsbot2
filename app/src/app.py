@@ -5,7 +5,7 @@ from hashlib import md5
 from datetime import datetime
 from time import time
 from collections import defaultdict
-from typing import Callable, Dict, Any, Awaitable
+from typing import AsyncIterator, Callable, Dict, Any, Awaitable
 
 from aiogram import Bot, Dispatcher, F, BaseMiddleware
 from aiogram.enums import ChatType, ParseMode
@@ -24,14 +24,15 @@ from webapp.routes import list_handler, api_list_handler, api_delete_handler
 
 from config import PORT, WEBAPP_URL
 from database import close_database, db
-from models import Sku
-from repositories import ProductRepository, SettingsRepository, SkuRepository
+from models import Sku, User
+from repositories import ProductRepository, SettingsRepository, SkuRepository, UserRepository
 from settings import AppSettings
 
 settings: AppSettings
 settings_repository = SettingsRepository(db)
 sku_repository = SkuRepository(db)
-product_repository: ProductRepository
+product_repository = ProductRepository(db)
+user_repository = UserRepository(db)
 
 
 class IsAdmin(BaseFilter):
@@ -40,14 +41,19 @@ class IsAdmin(BaseFilter):
 
 
 async def load_settings():
-    global settings, product_repository
+    global settings
 
     settings = await settings_repository.get()
-    Sku.configure_display(settings.error_min_threshold, settings.stores)
-    product_repository = ProductRepository(
-        db,
-        settings.cache_lifetime,
-        settings.http_timeout
+    Sku.configure(
+        error_min_threshold=settings.error_min_threshold,
+        stores=settings.stores
+    )
+    User.configure(
+        max_items_per_user=settings.max_items_per_user
+    )
+    ProductRepository.configure(
+        cache_lifetime=settings.cache_lifetime,
+        http_timeout=settings.http_timeout
     )
 
 
@@ -62,21 +68,25 @@ class LoggingMiddleware(BaseMiddleware):
             return
         if isinstance(event, Message):
             if event.text != '/start' and event.chat.type == ChatType.PRIVATE:
-                chat_id = str(event.from_user.id)
-                if not await db.users.find_one({'_id': chat_id}):
-                    user_data = {
-                        '_id': chat_id,
-                        'first_name': event.from_user.first_name,
-                        'last_name': event.from_user.last_name,
-                        'username': event.from_user.username,
-                        'enable': True
-                    }
-                    await db.users.insert_one(user_data)
-            
+                await user_repository.create_if_not_exists(event.from_user)
             result = await handler(event, data)
-            await logMessage(event)
+            await self.log_message(event)
             return result
         return await handler(event, data)
+
+    async def log_message(self, message: Message):
+        if not settings.log_chat_id:
+            return
+        if message.from_user.id == settings.admin_chat_id:
+            return
+        if not message.text:
+            return
+        if message.text in settings.log_filter:
+            return
+
+        username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
+        logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
+        await bot.send_message(settings.log_chat_id, logentry)
 
 
 # Configure logging
@@ -93,66 +103,37 @@ async def processException(e: Exception, chat_id: str):
         await disableUser(chat_id)
 
 
-async def logMessage(message: Message):
-    if not settings.log_chat_id:
-        return
-    if message.from_user.id == settings.admin_chat_id:
-        return
-    if not message.text:
-        return
-    if message.text in settings.log_filter:
-        return
-
-    username = ' (' + message.from_user.username + ')' if message.from_user.username else ''
-    logentry = '<b>' + message.from_user.full_name + username + ':</b> ' + message.text
-    await bot.send_message(settings.log_chat_id, logentry)
-
-
-def getStoreUrls():
-    arr = []
-    for store in settings.stores.values():
-        status = '' if store['active'] else ' <i>(временно недоступен)</i>'
-        arr.append(store['url'] + status)
-    return arr
-
-
 @dp.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def processCmdStart(message: Message):
     msg = substituteVars(settings.banner_start)
     await message.answer(msg)
 
-    chat_id = str(message.from_user.id)
-    data = {
-        'first_name': message.from_user.first_name,
-        'last_name': message.from_user.last_name,
-        'username': message.from_user.username,
-        'enable': True
-    }
-    await db.users.update_one({'_id' : chat_id }, {'$set': data}, upsert=True)
-    await sku_repository.update_many({'chat_id': chat_id}, {'$set': {'enable': True}})
+    user = User.from_aiogram_user(message.from_user)
+    await user_repository.save(user)
+    await sku_repository.update_many({'chat_id': user.id}, {'$set': {'enable': True}})
 
 
-async def broadcast(message: Message, text, docs, pin=False):
+async def broadcast(message: Message, text, users: AsyncIterator[User], pin=False):
     text_hash = md5(text.encode('utf-8')).hexdigest()
     await message.answer('🟢 Начало рассылки')
 
     count = 0
-    async for doc in docs:
+    async for user in users:
         count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
                 
-        if text_hash in doc.setdefault('broadcasts', []):
+        if text_hash in user.broadcasts:
             continue
 
         try:
-            sent_message = await bot.send_message(chat_id=doc['_id'], text=text)
+            sent_message = await bot.send_message(chat_id=user.id, text=text)
             if pin:
-                await bot.pin_chat_message(chat_id=doc['_id'], message_id=sent_message.message_id)
-            doc['broadcasts'].append(text_hash)
-            await db.users.update_one({'_id': doc['_id']}, {'$set': doc})
+                await bot.pin_chat_message(chat_id=user.id, message_id=sent_message.message_id)            
+            user.broadcasts.append(text_hash)
+            await user_repository.save(user)
         except Exception as e:
-            await processException(e, doc['_id'])
+            await processException(e, user.id)
         await asyncio.sleep(0.1)
 
     await message.answer('🔴 Окончание рассылки')
@@ -160,36 +141,40 @@ async def broadcast(message: Message, text, docs, pin=False):
 
 @dp.message(Command('users'), IsAdmin())
 async def processCmdUpdateUsers(message: Message):
-    cursor = db.users.find({'enable': True})
     await message.answer('🟢 Начало обновления списка пользователей')
-
     count = 0
-    async for doc in cursor:
+    async for user in user_repository.find({'enable': True}):
         count += 1
         if count % 100 == 0:
             await message.answer('Обработано: ' + str(count))
         
         try:
-            await bot.send_chat_action(chat_id=doc['_id'], action='typing')
+            await bot.send_chat_action(chat_id=user.id, action='typing')
         except Exception as e:
-            await processException(e, doc['_id'])
+            await processException(e, user.id)
         await asyncio.sleep(0.1)
 
     await message.answer('🔴 Окончание обновления списка пользователей')
 
 
 @dp.message(Command('bc'), IsAdmin())
-async def processCmdBroadcast(message: Message):
-    text = message.html_text.replace('/bc', '', 1).strip()
-    docs = db.users.find({'enable': True})
-    await broadcast(message, text, docs)
+async def processCmdBroadcast(message: Message, command: CommandObject):
+    text = (command.args or '').strip()
+    if not text:
+        await message.answer('Empty broadcast text')
+        return
+    users = user_repository.find({'enable': True})
+    await broadcast(message, text, users)
 
 
 @dp.message(Command('bc_pin'), IsAdmin())
-async def processCmdBroadcastAndPin(message: Message):
-    text = message.html_text.replace('/bc_pin', '', 1).strip()
-    docs = db.users.find({'enable': True})
-    await broadcast(message, text, docs, pin=True)
+async def processCmdBroadcastAndPin(message: Message, command: CommandObject):
+    text = (command.args or '').strip()
+    if not text:
+        await message.answer('Empty broadcast text')
+        return
+    users = user_repository.find({'enable': True})
+    await broadcast(message, text, users, pin=True)
 
 
 @dp.message(Command(re.compile(r'^bc_(\w+)$')), IsAdmin())
@@ -199,26 +184,8 @@ async def processCmdBroadcastByStore(message: Message, command: CommandObject):
     if not text:
         await message.answer('Empty broadcast text')
         return
-
-    docs = await db.users.aggregate([
-        {
-            '$lookup':
-            {
-                'from': 'sku',
-                'localField': '_id',
-                'foreignField': 'chat_id',
-                'as': 'matched_skus'
-            }
-        },
-        {
-            '$match':
-            {
-                'matched_skus.store': store,
-                'enable': True
-            }
-        }
-    ])
-    await broadcast(message, text, docs)
+    users = user_repository.find_by_store(store)
+    await broadcast(message, text, users)
 
 
 @dp.message(Command('reload'), IsAdmin())
@@ -353,41 +320,10 @@ async def command_list_web(message: Message):
 async def processCmdStat(message: Message):
     sent_msg = await message.answer('Getting stat...')
 
-    usersall = await db.users.count_documents({})
-    usersactive = await db.users.count_documents({'enable': True})
+    usersall = await user_repository.count()
+    usersactive = await user_repository.count({'enable': True})
     skuall = await sku_repository.count()
-    
-    pipeline = [
-        {
-            '$lookup':
-            {
-                'from': "sku",
-                'localField': "_id",
-                'foreignField': "chat_id",
-                'as': "sku_docs"
-            }
-        },
-        {
-            '$addFields': { 'sku_count': { '$size': "$sku_docs" } }
-        },
-        {
-            '$match': { 'sku_count': { '$ne': 0 } }
-        },
-        {
-            '$match': { 'enable': True }
-        },
-        {
-            '$count': 'count'
-        }
-    ]
-    
-    cursor = await db.users.aggregate(pipeline)
-    try:
-        result_list = await cursor.to_list(length=1)
-        userswsku = result_list[0]['count'] if result_list else 0
-    except Exception:
-        userswsku = 0
-        
+    userswsku = await user_repository.count_with_sku()
     skuactive = await sku_repository.count({'enable': True})
     unique_urls = len(await sku_repository.distinct('url', {'enable': True}))
 
@@ -404,35 +340,9 @@ async def processCmdStat(message: Message):
         msg += f'<b>{key}:</b> {num}\n'
 
     TOPNUMBER = 10
-    pipeline_top = [
-        {
-            '$lookup':
-            {
-                'from': "sku",
-                'localField': "_id",
-                'foreignField': "chat_id",
-                'as': "sku_docs"
-            }
-        },
-        {
-            '$addFields': { 'sku_count': { '$size': "$sku_docs" } }
-        },
-        {
-            '$match': { 'sku_count': { '$ne': 0 } }
-        },
-        {
-            '$sort': { "sku_count": -1 }
-        },
-        {
-            '$limit': TOPNUMBER
-        }
-    ]
-    
     msg += f'\n<b>Top {TOPNUMBER} users:</b>\n'
-    async for doc in await db.users.aggregate(pipeline_top):
-        username = ' (' + doc['username'] + ')' if doc['username'] else ''
-        full_name = doc['first_name'] + ' ' + doc['last_name'] if doc['last_name'] else doc['first_name']
-        msg += f'{full_name}{username}: {doc["sku_count"]}\n'
+    async for user in user_repository.top_users(TOPNUMBER):
+        msg += f'{user.display_name}: {user.sku_count}\n'
 
     await sent_msg.edit_text(msg)
 
@@ -486,19 +396,17 @@ async def showVariants(store, url, message: Message):
 
 
 async def addVariant(store, prodid, skuid, message: Message):
-    chat_id = str(message.chat.id)
-    user = await db.users.find_one({'_id': chat_id})
+    user = await user_repository.find_one(message.chat.id)
     if not user:
         await reply_or_edit_msg('Какая-то ошибка 😧', message)
         return
-
-    maxitems = user.get('maxitems', settings.max_items_per_user)
-    query = {'chat_id': chat_id}
-    if await sku_repository.count(query) >= maxitems:
-        await reply_or_edit_msg(f'⛔️ Увы, в данный момент добавить можно не более {maxitems} позиций', message)
+    
+    query = {'chat_id': user.id}
+    if await sku_repository.count(query) >= user.max_items:
+        await reply_or_edit_msg(f'⛔️ Увы, в данный момент добавить можно не более {user.max_items} позиций', message)
         return
 
-    docid = chat_id + '_' + store + '_' + prodid + '_' + skuid
+    docid = user.id + '_' + store + '_' + prodid + '_' + skuid
     if await sku_repository.exists(docid):
         await reply_or_edit_msg('️☝️ Товар уже есть в вашем списке', message)
         return
@@ -516,7 +424,7 @@ async def addVariant(store, prodid, skuid, message: Message):
     sku = Sku(variant=prod.variants[skuid])
     sku.doc_id = docid
     sku.store_prodid = sku.store + '_' + sku.prodid
-    sku.chat_id = chat_id
+    sku.chat_id = user.id
     sku.errors = 0
     sku.enable = True
     sku.lastcheck = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
@@ -531,7 +439,7 @@ async def addVariant(store, prodid, skuid, message: Message):
 
 
 def substituteVars(text):
-    text = text.replace('%STOREURLS%', '\n'.join(getStoreUrls()))
+    text = text.replace('%STOREURLS%', settings.get_store_urls())
     return text
 
 
@@ -562,17 +470,17 @@ async def removeInvalidSKU():
     query = {'lastgoodts': {'$lt': tsexpired}}
     messages = {}
     async for sku in sku_repository.find(query):
-        user = await db.users.find_one({'_id': sku.chat_id})
-        if not user['enable']:
+        user = await user_repository.find_one(sku.chat_id)
+        if not user.enable:
             continue
         line = sku.get_string(['store', 'url'])
         messages.setdefault(sku.chat_id, [banner]).append(line)
 
     await sku_repository.delete_many(query)
 
-    for chat_id in messages:
+    for chat_id, message in messages.items():
         try:
-            await paginatedTgMsg(messages[chat_id], chat_id)
+            await paginatedTgMsg(message, chat_id)
         except Exception as e:
             await processException(e, chat_id)
         await asyncio.sleep(0.1)
@@ -618,13 +526,13 @@ async def notify():
 
         notification_sku_ids.append(sku.doc_id)
 
-    for chat_id in messages:
+    for chat_id, message in messages.items():
         try:
-            await paginatedTgMsg(messages[chat_id], chat_id)
+            await paginatedTgMsg(message, chat_id)
         except Exception as e:
             await processException(e, chat_id)
         if settings.debug and settings.log_chat_id:
-            await paginatedTgMsg(messages[chat_id], settings.log_chat_id)
+            await paginatedTgMsg(message, settings.log_chat_id)
         await asyncio.sleep(0.1)
 
     if settings.best_deals_chat_id:
@@ -634,7 +542,7 @@ async def notify():
 
 
 async def disableUser(chat_id):
-    await db.users.update_one({'_id': chat_id}, {'$set': {'enable': False}}, upsert=True)
+    await user_repository.update_many({'_id': chat_id}, {'$set': {'enable': False}})
     await sku_repository.update_many({'chat_id': chat_id}, {'$set': {'enable': False}})
 
 
@@ -709,10 +617,6 @@ async def errorsMonitor():
             )
 
 
-async def clear_sku_cache():
-    await product_repository.clear_sku_cache()
-
-
 def create_webapp_server():
     app = web.Application()
     app.router.add_get('/list/', list_handler)
@@ -746,7 +650,7 @@ async def main():
     scheduler.add_job(checkSKU, 'interval', minutes=5)
     scheduler.add_job(notify, 'interval', minutes=5)
     scheduler.add_job(errorsMonitor, 'interval', minutes=settings.check_interval)
-    scheduler.add_job(clear_sku_cache, 'cron', day_of_week='mon', hour=0, minute=0)
+    scheduler.add_job(product_repository.clear_sku_cache, 'cron', day_of_week='mon', hour=0, minute=0)
     scheduler.add_job(removeInvalidSKU, 'cron', day=1, hour=14, minute=0)
 
     try:

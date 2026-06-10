@@ -24,6 +24,13 @@ class AppSettings:
     http_timeout: int
     request_delay: int
 
+    def get_store_urls(self) -> str:
+        urls = []
+        for store in self.stores.values():
+            status = '' if store['active'] else ' <i>(временно недоступен)</i>'
+            urls.append(store['url'] + status)
+        return '\n'.join(urls)
+
     @classmethod
     def from_document(cls, document: dict) -> 'AppSettings':
         return cls(

@@ -2,10 +2,11 @@ from time import time
 from typing import AsyncIterator
 
 from pymongo import UpdateOne
+from aiogram.types import User as TgUser
 
 import parsing
 from constants import STATUS_TIMEOUTERROR
-from models import Product, Sku
+from models import Product, Sku, User
 from settings import AppSettings
 
 
@@ -81,10 +82,16 @@ class SkuRepository:
         await self.collection.bulk_write(requests)
 
 class ProductRepository:
-    def __init__(self, database, cache_lifetime: int, http_timeout: int):
+    cache_lifetime = 0
+    http_timeout = 0
+
+    def __init__(self, database):
         self.collection = database.skucache
-        self.cache_lifetime = cache_lifetime
-        self.http_timeout = http_timeout
+
+    @classmethod
+    def configure(cls, cache_lifetime: int, http_timeout: int):
+        cls.cache_lifetime = cache_lifetime
+        cls.http_timeout = http_timeout
 
     async def get(self, store: str, url: str) -> Product:
         timestamp_expired = int(time()) - self.cache_lifetime * 60
@@ -125,3 +132,113 @@ class ProductRepository:
             'url': url
         }
         await self.collection.update_one(query, {'$set': data}, upsert=True)
+
+
+class UserRepository:
+    def __init__(self, database):
+        self.collection = database.users
+
+    async def find(self, query: dict | None = None) -> AsyncIterator[User]:
+        cursor = self.collection.find(query or {})
+        async for document in cursor:
+            yield User.from_document(document)
+
+    async def find_one(self, chat_id: str | int) -> User | None:
+        document = await self.collection.find_one({'_id': str(chat_id)})
+        return User.from_document(document) if document else None
+    
+    async def save(self, user: User):
+        data = {
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'username': user.username,
+            'enable': user.enable,
+            'broadcasts': user.broadcasts
+        }
+        await self.collection.update_one({'_id': user.id}, {'$set': data}, upsert=True)
+
+    async def find_by_store(self, store: str) -> AsyncIterator[User]:
+        cursor = await self.collection.aggregate([
+            {
+                '$lookup':
+                {
+                    'from': 'sku',
+                    'localField': '_id',
+                    'foreignField': 'chat_id',
+                    'as': 'matched_skus'
+                }
+            },
+            {
+                '$match':
+                {
+                    'matched_skus.store': store,
+                    'enable': True
+                }
+            }
+        ])
+        async for document in cursor:
+            yield User.from_document(document)
+
+    async def create_if_not_exists(self, tg_user: TgUser) -> User:
+        if not await self.find_one(tg_user.id):
+            new_user = User.from_aiogram_user(tg_user)
+            await self.save(new_user)
+
+    async def top_users(self, limit: int) -> AsyncIterator[User]:
+        cursor = await self.collection.aggregate([
+            {
+                '$lookup':
+                {
+                    'from': "sku",
+                    'localField': "_id",
+                    'foreignField': "chat_id",
+                    'as': "sku_docs"
+                }
+            },
+            {
+                '$addFields': { 'sku_count': { '$size': "$sku_docs" } }
+            },
+            {
+                '$match': { 'sku_count': { '$ne': 0 } }
+            },
+            {
+                '$sort': { "sku_count": -1 }
+            },
+            {
+                '$limit': limit
+            }
+        ])
+        
+        async for document in cursor:
+            yield User.from_document(document)
+
+    async def count(self, query: dict | None = None) -> int:
+        return await self.collection.count_documents(query or {})
+
+    async def count_with_sku(self) -> int:
+        cursor = await self.collection.aggregate([
+            {
+                '$match': {'enable': True}
+            },
+            {
+                '$lookup':
+                {
+                    'from': 'sku',
+                    'localField': '_id',
+                    'foreignField': 'chat_id',
+                    'as': 'sku_docs'
+                }
+            },
+            {
+                '$match': { 'sku_docs.0': { '$exists': True } }
+            },
+            {
+                '$count': 'count'
+            }
+        ])
+        result = await cursor.to_list(length=1)
+        return result[0]['count'] if result else 0
+    
+    async def update_many(self, query: dict, update: dict):
+        return await self.collection.update_many(query, update, upsert=True)
+

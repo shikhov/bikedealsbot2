@@ -8,14 +8,14 @@ tasks:
         sync: {src: "../app", dst: "$appname$target", delete: true}
 
       - name: Copy config
-        copy: {src: "../config/config$target.py", dst: "$appname$target/src/config.py"}
+        copy: {src: "../config/config$target.env", dst: "$appname$target/.env"}
 
       - name: Docker build and start
         script: | # sh
           docker build $appname$target -t $appname$target-image
           docker stop $appname$target || true
           docker rm $appname$target || true
-          docker run -d --network reproxy -e WEBAPP_HOST=$host -e WEBAPP_PATH=$appname$target --name $appname$target --restart=always $appname$target-image
+          docker run -d --network reproxy --env-file $appname$target/.env -e WEBAPP_HOST=$host -e WEBAPP_PATH=$appname$target --name $appname$target --restart=always $appname$target-image
 
 
   - name: debug_sync
