@@ -2,11 +2,11 @@ from dataclasses import dataclass
 
 class StoreSettings:
     def __init__(self, name: str, data: dict):
-        self.name = name
-        self.url = data['url']
-        self.url_regex = data['url_regex']
-        self.active = data['active']
-        self.price_threshold = data['price_threshold']
+        self.name: str = name
+        self.url: str = data['url']
+        self.url_regex: str = data['url_regex']
+        self.active: bool = data['active']
+        self.price_threshold: float = data['price_threshold']
 
 
 @dataclass(frozen=True)

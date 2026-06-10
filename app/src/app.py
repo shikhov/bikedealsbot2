@@ -559,7 +559,8 @@ async def checkSKU():
 
     query = {'store_prodid': {'$in': prodlist}, 'enable': True}
     async for sku in sku_repository.find(query, sort='store_prodid'):
-        if not settings.stores[sku.store].active:
+        store_settings = settings.stores[sku.store]
+        if not store_settings.active:
             continue
 
         logging.info(sku.doc_id + ' [' + sku.name + '][' + sku.variant + ']')
@@ -569,10 +570,9 @@ async def checkSKU():
             variant = prod.variants[sku.id]
             if variant.instock != sku.instock:
                 sku.instock_prev = sku.instock
-
-            price_threshold = settings.stores[sku.store].price_threshold
+            
             if variant.currency == sku.currency:
-                if sku.price * price_threshold < abs(variant.price - sku.price):
+                if sku.price * store_settings.price_threshold < abs(variant.price - sku.price):
                     sku.price_prev = sku.price
 
             sku.instock = variant.instock
