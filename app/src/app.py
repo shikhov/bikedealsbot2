@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from html import escape
 from hashlib import md5
 from datetime import datetime
 from time import time
@@ -18,6 +19,7 @@ from aiogram.types import (
     WebAppInfo
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pydantic import ValidationError
 from pytz import timezone
 from aiohttp import web
 from webapp.routes import list_handler, api_list_handler, api_delete_handler
@@ -189,8 +191,17 @@ async def processCmdBroadcastByStore(message: Message, command: CommandObject):
 
 
 @dp.message(Command('reload'), IsAdmin())
-async def processCmdReload(message: Message):
-    await load_settings()
+async def cmd_reload(message: Message):
+    try:
+        await load_settings()
+    except ValidationError as error:
+        errors = ['Settings validation failed:']
+        for item in error.errors():
+            field = '.'.join(str(part) for part in item['loc'])
+            errors.append(f'<code>{escape(field)}</code>: {escape(item["msg"])}')
+        await paginatedTgMsg(errors, message.chat.id)
+        return
+
     await message.answer('Settings successfully reloaded')
 
 

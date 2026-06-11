@@ -1,61 +1,55 @@
-from dataclasses import dataclass
+from typing import Any, Mapping
 
-class StoreSettings:
-    def __init__(self, name: str, data: dict):
-        self.name: str = name
-        self.url: str = data['url']
-        self.url_regex: str = data['url_regex']
-        self.active: bool = data['active']
-        self.price_threshold: float = data['price_threshold']
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-@dataclass(frozen=True)
-class AppSettings:
-    token: str
-    admin_chat_id: int
-    best_deals_chat_id: int | None
-    best_deals_min_percentage: int
-    best_deals_warn_percentage: int
-    best_deals_min_value: dict
-    cache_lifetime: int
-    error_min_threshold: int
-    error_max_days: int
-    max_items_per_user: int
-    check_interval: int
-    log_chat_id: int | None
-    log_filter: list[str]
-    banner_start: str
-    banner_help: str
-    banner_donate: str
-    stores: dict[str, StoreSettings]
-    debug: bool
-    http_timeout: int
-    request_delay: int
+class StoreSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra='ignore')
+
+    name: str
+    url: str
+    url_regex: str
+    active: bool
+    price_threshold: float
+
+
+class AppSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra='ignore', populate_by_name=True)
+
+    token: str = Field(alias='TOKEN')
+    admin_chat_id: int = Field(alias='ADMINCHATID')
+    best_deals_chat_id: int | None = Field(alias='BESTDEALSCHATID')
+    best_deals_min_percentage: int = Field(alias='BESTDEALSMINPERCENTAGE')
+    best_deals_warn_percentage: int = Field(alias='BESTDEALSWARNPERCENTAGE')
+    best_deals_min_value: dict[str, int] = Field(alias='BESTDEALSMINVALUE')
+    cache_lifetime: int = Field(alias='CACHELIFETIME')
+    error_min_threshold: int = Field(alias='ERRORMINTHRESHOLD')
+    error_max_days: int = Field(alias='ERRORMAXDAYS')
+    max_items_per_user: int = Field(alias='MAXITEMSPERUSER')
+    check_interval: int = Field(alias='CHECKINTERVAL')
+    log_chat_id: int | None = Field(alias='LOGCHATID')
+    log_filter: list[str] = Field(alias='LOGFILTER')
+    banner_start: str = Field(alias='BANNERSTART')
+    banner_help: str = Field(alias='BANNERHELP')
+    banner_donate: str = Field(alias='BANNERDONATE')
+    stores: dict[str, StoreSettings] = Field(alias='STORES')
+    debug: bool = Field(alias='DEBUG')
+    http_timeout: int = Field(alias='HTTPTIMEOUT')
+    request_delay: int = Field(alias='REQUESTDELAY')
+
+    @model_validator(mode='before')
+    @classmethod
+    def add_store_names(cls, data: Any) -> Any:
+        new_data = dict(data)
+        new_data['STORES'] = {
+            store_name: {**store_data, 'name': store_name}
+            for store_name, store_data in data['STORES'].items()
+        }
+        return new_data
 
     @classmethod
-    def from_document(cls, document: dict) -> 'AppSettings':
-        return cls(
-            token=document['TOKEN'],
-            admin_chat_id=document['ADMINCHATID'],
-            best_deals_chat_id=document['BESTDEALSCHATID'],
-            best_deals_min_percentage=document['BESTDEALSMINPERCENTAGE'],
-            best_deals_warn_percentage=document['BESTDEALSWARNPERCENTAGE'],
-            best_deals_min_value=document['BESTDEALSMINVALUE'],
-            cache_lifetime=document['CACHELIFETIME'],
-            error_min_threshold=document['ERRORMINTHRESHOLD'],
-            error_max_days=document['ERRORMAXDAYS'],
-            max_items_per_user=document['MAXITEMSPERUSER'],
-            check_interval=document['CHECKINTERVAL'],
-            log_chat_id=document['LOGCHATID'],
-            log_filter=document['LOGFILTER'],
-            banner_start=document['BANNERSTART'],
-            banner_help=document['BANNERHELP'],
-            banner_donate=document['BANNERDONATE'],
-            stores={name: StoreSettings(name, data) for name, data in document['STORES'].items()},
-            debug=document['DEBUG'],
-            http_timeout=document['HTTPTIMEOUT'],
-            request_delay=document['REQUESTDELAY']
-        )
+    def from_document(cls, document: Mapping[str, Any]) -> 'AppSettings':
+        return cls.model_validate(document)
 
     def get_store_urls(self) -> str:
         urls = []
