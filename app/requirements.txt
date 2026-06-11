@@ -6,6 +6,5 @@ pymongo==4.15.4
 dnspython==2.2.1
 beautifulsoup4==4.10.0
 lxml==4.7.1
-requests
-curl_cffi
-crcmod
+curl_cffi==0.15.0
+crcmod==1.7
