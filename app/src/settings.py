@@ -49,7 +49,11 @@ class AppSettings(BaseModel):
 
     @classmethod
     def from_document(cls, document: Mapping[str, Any]) -> 'AppSettings':
-        return cls.model_validate(document)
+        settings = cls.model_validate(document)
+        return settings.model_copy(update={
+            'banner_start': settings.substitute_vars(settings.banner_start),
+            'banner_help': settings.substitute_vars(settings.banner_help),
+        })
 
     def get_store_urls(self) -> str:
         urls = []
@@ -57,3 +61,6 @@ class AppSettings(BaseModel):
             status = '' if store.active else ' <i>(временно недоступен)</i>'
             urls.append(store.url + status)
         return '\n'.join(urls)
+
+    def substitute_vars(self, text: str) -> str:
+        return text.replace('%STOREURLS%', self.get_store_urls())

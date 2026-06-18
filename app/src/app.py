@@ -107,8 +107,7 @@ async def processException(e: Exception, chat_id: str):
 
 @dp.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def processCmdStart(message: Message):
-    msg = substituteVars(settings.banner_start)
-    await message.answer(msg)
+    await message.answer(settings.banner_start)
 
     user = User.from_aiogram_user(message.from_user)
     await user_repository.save(user)
@@ -291,8 +290,7 @@ async def processCmdDel(message: Message):
 
 @dp.message(Command('help'), F.chat.type == ChatType.PRIVATE)
 async def processCmdHelp(message: Message):
-    msg = substituteVars(settings.banner_help)
-    await message.answer(msg)
+    await message.answer(settings.banner_help)
 
 
 @dp.message(Command('donate'), F.chat.type == ChatType.PRIVATE)
@@ -435,11 +433,6 @@ async def addVariant(store, prodid, skuid, message: Message):
     sku = Sku.from_variant(prod.variants[skuid], user.id)
     await sku_repository.insert(sku)
     await reply_or_edit_msg(f'{sku.variant or sku.name}\n✔️ Добавлено к отслеживанию', message)
-
-
-def substituteVars(text):
-    text = text.replace('%STOREURLS%', settings.get_store_urls())
-    return text
 
 
 async def paginatedTgMsg(text_array, chat_id, message_id=0, delimiter='\n\n'):
