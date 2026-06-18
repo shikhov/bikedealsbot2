@@ -100,7 +100,7 @@ class Variant:
     def _del_str(self):
         return f'\n<i>Удалить: /del_{self.key}</i>'
 
-    def get_string(self, options):
+    def get_string(self, *options):
         string_parts = []
 
         if 'store' in options:
@@ -207,7 +207,7 @@ class Sku(Variant):
     def _price_prev_str(self):
         return f' (было: {self.price_prev} {self.currency})'
 
-    def get_string(self, options):
+    def get_string(self, *options):
         string_parts = []
         if 'store' in options:
             string_parts.append(self._store_str())
@@ -277,7 +277,7 @@ class Product:
     def getSkuAddList(self):
         text_array = [self.name]
         for variant in self.variants.values():
-            line = variant.get_string(['icon', 'price', 'add'])
+            line = variant.get_string('icon', 'price', 'add')
             text_array.append(line)
         return text_array
 

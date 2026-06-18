@@ -304,7 +304,7 @@ async def processCmdList(message: Message):
     chat_id = str(message.from_user.id)
     query = {'chat_id': chat_id}
     async for sku in sku_repository.find(query):
-        line = sku.get_string(['store', 'url', 'icon', 'price', 'del'])
+        line = sku.get_string('store', 'url', 'icon', 'price', 'del')
         text_array.append(line)
 
     if text_array:
@@ -377,7 +377,7 @@ async def processSearch(message: Message):
     query = {'chat_id': chat_id, 'name': {'$regex': pattern}}
     text_array = []
     async for sku in sku_repository.find(query):
-        line = sku.get_string(['store', 'url', 'icon', 'price', 'del'])
+        line = sku.get_string('store', 'url', 'icon', 'price', 'del')
         text_array.append(line)
 
     header = f'Результаты поиска по строке <b>{text}</b>:'
@@ -465,7 +465,7 @@ async def removeInvalidSKU():
         user = await user_repository.find_one(sku.chat_id)
         if not user.enable:
             continue
-        line = sku.get_string(['store', 'url'])
+        line = sku.get_string('store', 'url')
         messages.setdefault(sku.chat_id, [banner]).append(line)
 
     await sku_repository.delete_many(query)
@@ -503,13 +503,13 @@ async def notify():
     query = {'$or': [{'price_prev': {'$ne': None}},{'instock_prev': {'$ne': None}}], 'enable': True}
     async for sku in sku_repository.find(query):
         if sku.instock_prev is not None:
-            skustring = sku.get_string(['store', 'url', 'price'])
+            skustring = sku.get_string('store', 'url', 'price')
             if sku.instock:
                 addMsg('✅ Снова в наличии!\n' + skustring)
             if not sku.instock:
                 addMsg('🚫 Не в наличии\n' + skustring)
         elif sku.price_prev is not None and sku.instock:
-            skustring = sku.get_string(['store', 'url', 'price', 'price_prev'])
+            skustring = sku.get_string('store', 'url', 'price', 'price_prev')
             if sku.price < sku.price_prev:
                 addMsg('📉 Снижение цены!\n' + skustring)
                 processBestDeals()
