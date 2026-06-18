@@ -274,7 +274,7 @@ class Product:
             self.store = first_sku.store
             self.var_count = len(data)
 
-    def getSkuAddList(self):
+    def get_sku_add_list(self):
         text_array = [self.name]
         for variant in self.variants.values():
             line = variant.get_string('icon', 'price', 'add')
@@ -282,8 +282,4 @@ class Product:
         return text_array
 
     def has_sku(self, skuid: str):
-        if not self.variants:
-            return False
-        if skuid not in self.variants:
-            return False
-        return True
+        return skuid in self.variants

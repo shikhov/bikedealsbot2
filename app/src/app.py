@@ -401,7 +401,7 @@ async def showVariants(store, url, message: Message):
     elif prod.var_count == 1:
         await addVariant(store, prod.id, prod.first_skuid, sent_msg)
     elif prod.var_count > 1:
-        await paginatedTgMsg(prod.getSkuAddList(), message.chat.id, sent_msg.message_id)
+        await paginatedTgMsg(prod.get_sku_add_list(), message.chat.id, sent_msg.message_id)
 
 
 async def addVariant(store, prodid, skuid, message: Message):
