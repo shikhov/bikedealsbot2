@@ -7,11 +7,26 @@ import crcmod.predefined
 from aiohttp import ClientSession, ClientTimeout
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from constants import STATUS_OK, STATUS_TIMEOUTERROR, STATUS_PARSINGERROR
 
 crc16 = crcmod.predefined.Crc('crc-16')
 crc32 = crcmod.predefined.Crc('crc-32')
+
+def build_headers(url: str) -> dict[str, str]:
+        parsed = urlparse(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) "
+                "Gecko/20100101 Firefox/145.0"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.8,ru;q=0.5,ru-RU;q=0.3",
+            "Origin": origin,
+            "Referer": url,
+        }
 
 
 async def parseSB(url, httptimeout):
@@ -63,13 +78,141 @@ async def parseSB(url, httptimeout):
         return {'status': STATUS_TIMEOUTERROR, 'variants': None}
     except Exception:
         return {'status': STATUS_PARSINGERROR, 'variants': None}
+    
+
+async def fetch_B24(url: str, httptimeout: int, impersonate: str):
+
+    POW_RE = re.compile(
+        r"var\s+i\s*=\s*(\d+)\s*;"
+        r'\s*var\s+j\s*=\s*i\s*\+\s*Number\(\s*((?:"\d+"\s*\+\s*)*"\d+")\s*\)\s*;',
+        re.S,
+    )
+    REFRESH_RE = re.compile(r"url\s*=\s*['\"]?([^'\"\s>]+)", re.I)
+    BM_VERIFY_RE = re.compile(r'"bm-verify"\s*:\s*"([^"]+)"')
+
+
+    def without_query_param(url: str, param_name: str) -> str:
+        parsed = urlparse(url)
+        query_parts = [
+            part
+            for part in parsed.query.split("&")
+            if part and part.split("=", 1)[0] != param_name
+        ]
+        return urlunparse(parsed._replace(query="&".join(query_parts)))
+
+
+    def get_refresh_url(soup: BeautifulSoup, base_url: str) -> str | None:
+        if not soup.head:
+            return None
+
+        meta = soup.head.find(
+            "meta",
+            attrs={"http-equiv": lambda value: value and value.lower() == "refresh"},
+        )
+        if not meta:
+            return None
+
+        match = REFRESH_RE.search(meta.get("content", ""))
+        if not match:
+            return None
+
+        return urljoin(base_url, match.group(1))
+
+
+    def get_pow(soup: BeautifulSoup) -> int:
+        for script in soup.find_all("script"):
+            match = POW_RE.search(script.get_text())
+            if not match:
+                continue
+
+            i = int(match.group(1))
+            number_parts = re.findall(r'"(\d+)"', match.group(2))
+            return i + int("".join(number_parts))
+
+        raise ValueError("Не найден скрипт с вычислением pow")
+
+
+    def get_bm_verify(soup: BeautifulSoup) -> str:
+        for script in soup.find_all("script"):
+            match = BM_VERIFY_RE.search(script.get_text())
+            if match:
+                return match.group(1)
+
+        raise ValueError("Не найден bm-verify token в challenge-скрипте")
+
+
+    def is_interstitial_challenge(html: str) -> bool:
+        return "/_sec/verify?provider=interstitial" in html and '"bm-verify"' in html
+
+
+    def solve_interstitial_challenge(session: curl.Session, response: curl.Response) -> curl.Response:
+        html = response.text
+        soup = BeautifulSoup(html, "lxml")
+        page_url = response.url
+
+        pow_value = get_pow(soup)
+        bm_verify = get_bm_verify(soup)
+        fallback_url = get_refresh_url(soup, page_url)
+
+        parsed = urlparse(page_url)
+        verify_url = f"{parsed.scheme}://{parsed.netloc}/_sec/verify?provider=interstitial"
+        headers = build_headers(page_url)
+
+        verify_response = session.post(
+            verify_url,
+            json={"bm-verify": bm_verify, "pow": pow_value},
+            headers=headers,
+            impersonate=impersonate,
+            timeout=httptimeout,
+        )
+        verify_response.raise_for_status()
+
+        try:
+            data = verify_response.json()
+        except json.JSONDecodeError:
+            data = {}
+
+        if data.get("location"):
+            next_url = urljoin(page_url, data["location"])
+        elif data.get("reload") is True:
+            next_url = without_query_param(page_url, "bm-verify")
+        elif fallback_url:
+            next_url = fallback_url
+        else:
+            next_url = page_url
+
+        return session.get(
+            next_url,
+            headers=build_headers(next_url),
+            impersonate=impersonate,
+            timeout=httptimeout,
+        )
+
+
+    def fetch_original_page(url: str):
+        session = curl.Session()
+        response = session.get(
+            url,
+            headers=build_headers(url),
+            impersonate=impersonate,
+            timeout=httptimeout,
+        )
+        response.raise_for_status()
+
+        if not is_interstitial_challenge(response.text):
+            return response
+
+        final_response = solve_interstitial_challenge(session, response)
+        final_response.raise_for_status()
+        return final_response.text, session.cookies
+
+    return fetch_original_page(url)
 
 
 async def parseB24(url, httptimeout):
     try:
-        async with curl.AsyncSession() as session:
-            response = await session.get(url, impersonate='firefox', timeout=httptimeout)
-            content = response.text
+        IMPERSONATE = "firefox"
+        content, cookies = await fetch_B24(url, httptimeout, IMPERSONATE)
 
         soup = BeautifulSoup(content, 'lxml')
         res = soup.find('div', {'id': 'add-to-cart'})
@@ -83,7 +226,12 @@ async def parseB24(url, httptimeout):
 
         jsurl = f'https://www.bike24.com/api/product/{prodid}/availability?deliveryCountryId=4&zipCode='
         async with curl.AsyncSession() as s:            
-            response = await s.get(jsurl, impersonate='firefox', timeout=httptimeout)        
+            response = await s.get(
+                jsurl,
+                impersonate='firefox',
+                timeout=httptimeout,
+                cookies=cookies,
+                headers=build_headers(url))        
             availdata = response.text
 
         availdict = {}
