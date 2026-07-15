@@ -5,6 +5,7 @@ from typing import Dict
 from aiogram.types import User as TgUser
 from pytz import timezone
 
+from constants import PRICE_HISTORY_LIMIT, PRICE_ROLLBACK_TOLERANCE, PRICE_ROLLBACK_WINDOW_SECONDS
 from settings import StoreSettings
 
 class User:
@@ -136,7 +137,8 @@ class Sku(Variant):
         lastcheckts: int,
         lastgoodts: int,
         instock_prev: bool | None,
-        price_prev: int | None
+        price_prev: int | None,
+        price_history: list[dict[str, int]] | None = None
     ):
         self.store = variant.store
         self.prodid = variant.prodid
@@ -158,6 +160,7 @@ class Sku(Variant):
         self.lastgoodts = lastgoodts
         self.instock_prev = instock_prev
         self.price_prev = price_prev
+        self.price_history = price_history or []
         self.store_prodid = self.store + '_' + self.prodid
 
     @classmethod
@@ -172,13 +175,14 @@ class Sku(Variant):
             lastcheckts=data['lastcheckts'],
             lastgoodts=data['lastgoodts'],
             instock_prev=data['instock_prev'],
-            price_prev=data['price_prev']
+            price_prev=data['price_prev'],
+            price_history=data.get('price_history')
         )
 
     @classmethod
     def from_variant(cls, variant: Variant, user_id: str) -> 'Sku':
         timestamp = int(time())
-        return cls(
+        sku = cls(
             variant=variant,
             doc_id=f'{user_id}_{variant.store}_{variant.prodid}_{variant.id}',
             chat_id=user_id,
@@ -190,6 +194,8 @@ class Sku(Variant):
             instock_prev=None,
             price_prev=None
         )
+        sku.record_price(variant.price, timestamp)
+        return sku
 
     @classmethod
     def configure(cls, error_min_threshold: int, stores: dict[str, StoreSettings]):
@@ -206,6 +212,26 @@ class Sku(Variant):
 
     def _price_prev_str(self):
         return f' (было: {self.price_prev} {self.currency})'
+
+    def record_price(self, price: int, timestamp: int):
+        self.price_history.append({'price': price, 'timestamp': timestamp})
+        self.price_history = self.price_history[-PRICE_HISTORY_LIMIT:]
+
+    def is_recent_price_rollback(self) -> bool:
+        if len(self.price_history) < 3:
+            return False
+
+        current_price = self.price_history[-1]
+        price_before_rise = self.price_history[-3]
+        cp = current_price['price']
+        pbr = price_before_rise['price']
+        cp_ts = current_price['timestamp']
+        pbr_ts = price_before_rise['timestamp']
+        
+        if abs(pbr-cp)/pbr <= PRICE_ROLLBACK_TOLERANCE and cp_ts - pbr_ts <= PRICE_ROLLBACK_WINDOW_SECONDS:
+            return True
+
+        return False
 
     def get_string(self, *options):
         string_parts = []
@@ -248,7 +274,8 @@ class Sku(Variant):
             'lastcheckts': self.lastcheckts,
             'lastgoodts': self.lastgoodts,
             'instock_prev': self.instock_prev,
-            'price_prev': self.price_prev
+            'price_prev': self.price_prev,
+            'price_history': self.price_history
         }
 
 

@@ -482,7 +482,9 @@ async def notify():
     def addMsg(msg):
         messages.setdefault(sku.chat_id, []).append(msg)
 
-    def processBestDeals():
+    def process_best_deals():
+        if sku.is_recent_price_rollback():
+            return
         price_prev = sku.price_prev
         price = sku.price
         if price_prev == 0:
@@ -512,7 +514,7 @@ async def notify():
             skustring = sku.get_string('store', 'url', 'price', 'price_prev')
             if sku.price < sku.price_prev:
                 addMsg('📉 Снижение цены!\n' + skustring)
-                processBestDeals()
+                process_best_deals()
             if sku.price > sku.price_prev:
                 addMsg('📈 Повышение цены\n' + skustring)
 
@@ -556,7 +558,8 @@ async def checkSKU():
             continue
 
         logging.info(sku.doc_id + ' [' + sku.name + '][' + sku.variant + ']')
-
+        check_timestamp = int(time())
+        
         prod = await product_repository.get(sku.store, sku.url)
         if prod.has_sku(sku.id):
             variant = prod.variants[sku.id]
@@ -566,18 +569,22 @@ async def checkSKU():
             if variant.currency == sku.currency:
                 if sku.price * store.price_threshold < abs(variant.price - sku.price):
                     sku.price_prev = sku.price
+                    sku.record_price(variant.price, check_timestamp)
+            else:
+                sku.price_history = []
+                sku.record_price(variant.price, check_timestamp)
 
             sku.instock = variant.instock
             sku.currency = variant.currency
             sku.price = variant.price
             sku.variant = variant.variant
             sku.errors = 0
-            sku.lastgoodts = int(time())
+            sku.lastgoodts = check_timestamp
         else:
             sku.errors += 1
 
         sku.lastcheck = datetime.now(timezone('Asia/Yekaterinburg')).strftime('%d.%m.%Y %H:%M')
-        sku.lastcheckts = int(time())
+        sku.lastcheckts = check_timestamp
         try:
             await sku_repository.save(sku)
         except Exception as e:
