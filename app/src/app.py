@@ -483,7 +483,9 @@ async def notify():
         messages.setdefault(sku.chat_id, []).append(msg)
 
     def process_best_deals():
+        bdkey = sku.store_prodid + '_' + sku.id
         if sku.is_recent_price_rollback():
+            bestdeals.pop(bdkey, None)
             return
         price_prev = sku.price_prev
         price = sku.price
@@ -493,7 +495,6 @@ async def notify():
         value = price_prev - price
         minvalue = settings.best_deals_min_value.get(sku.currency, 0)
         if percents >= settings.best_deals_min_percentage and value >= minvalue:
-            bdkey = sku.store_prodid + '_' + sku.id
             bestdeals[bdkey] = skustring + ' ' + str(percents) + '%'
             if percents >= settings.best_deals_warn_percentage:
                 bestdeals[bdkey] += '‼️'
