@@ -610,7 +610,7 @@ async def errorsMonitor():
             continue
         good_count = good[store]
         bad_count = bad[store]
-        if good_count == 0 or bad_count/float(good_count) > 0.8:
+        if good_count == 0 or bad_count/float(good_count) > 2:
             await bot.send_message(
                 settings.admin_chat_id,
                 f'Problem with {store}!\nGood: {good_count}\nBad: {bad_count}'
